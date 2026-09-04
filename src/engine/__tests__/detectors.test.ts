@@ -3,6 +3,8 @@ import {
   detectEarningsUpcoming,
   detectMoveSinceLastSeen,
   detectRangeBreak,
+  detectCorrelationBreak,
+  detectQuietRegime,
   detectSectorDivergence,
   detectVolRegimeShift,
   detectVolumeSpike,
@@ -123,6 +125,130 @@ describe('detectVolumeSpike', () => {
   it('does NOT fire on ordinary volume', () => {
     const bars = makeSeries({ days: 200, seed: 112 })
     expect(detectVolumeSpike(inputFor(bars))).toBeNull()
+  })
+})
+
+describe('detectCorrelationBreak', () => {
+  /** Tracks its sector closely, then decouples over the final 20 sessions. */
+  function decoupling(base: Bar[], tail = 20) {
+    return makeCorrelatedSeries(
+      base,
+      (i) => (i < base.length - tail ? 0.95 : 0.0),
+      { seed: 31 },
+    )
+  }
+
+  it('fires when a name stops tracking its sector', () => {
+    const bars = makeSeries({ days: 260, seed: 601, dailyVol: 0.012 })
+    const event = detectCorrelationBreak(
+      inputFor(bars, { sector: decoupling(bars) }),
+    )
+
+    expect(event).not.toBeNull()
+    expect(event!.magnitude).toBeGreaterThanOrEqual(THRESHOLDS.corrBreakDrop)
+    expect(event!.headline).toMatch(/Stopped tracking its sector/)
+    // Decoupling is neither bullish nor bearish. It is a claim about structure.
+    expect(event!.direction).toBe(0)
+  })
+
+  it('does NOT fire when the relationship holds', () => {
+    const bars = makeSeries({ days: 260, seed: 602, dailyVol: 0.012 })
+    const stable = makeCorrelatedSeries(bars, 0.95, { seed: 32 })
+
+    expect(detectCorrelationBreak(inputFor(bars, { sector: stable }))).toBeNull()
+  })
+
+  it('does NOT fire on a pair that never correlated', () => {
+    // The gate that matters most. Without a baseline requirement, every
+    // unrelated pair "breaks" constantly, because short-window correlation of
+    // two independent series wanders freely around zero.
+    const bars = makeSeries({ days: 260, seed: 603, dailyVol: 0.012 })
+    const unrelated = makeCorrelatedSeries(bars, 0.0, { seed: 33 })
+
+    const f = computeFeatures('TEST', bars, [], unrelated)!
+    expect(f.corrSectorLong!).toBeLessThan(THRESHOLDS.corrBreakBaseline)
+    expect(detectCorrelationBreak(inputFor(bars, { sector: unrelated }))).toBeNull()
+  })
+
+  it('returns null rather than a confident zero when history is too short', () => {
+    const bars = makeSeries({ days: 90, seed: 604 })
+    const sector = makeCorrelatedSeries(bars, 0.95, { seed: 34 })
+
+    // 90 sessions cannot support a 120-session baseline.
+    const f = computeFeatures('TEST', bars, [], sector)!
+    expect(f.corrSectorLong).toBeNull()
+    expect(detectCorrelationBreak(inputFor(bars, { sector }))).toBeNull()
+  })
+
+  it('is unaffected by a session the sector series is missing', () => {
+    // Positional pairing across a holiday one series observes and the other
+    // does not would offset every subsequent return by a day. For a detector
+    // whose whole job is noticing a relationship change, that artefact is
+    // indistinguishable from the signal itself.
+    const bars = makeSeries({ days: 260, seed: 605, dailyVol: 0.012 })
+    const sector = makeCorrelatedSeries(bars, 0.95, { seed: 35 })
+
+    const withHoliday = sector.filter((_, i) => i !== 100)
+
+    const full = computeFeatures('TEST', bars, [], sector)!
+    const gapped = computeFeatures('TEST', bars, [], withHoliday)!
+
+    // Not identical - one fewer observation - but the same relationship.
+    expect(Math.abs(full.corrSectorLong! - gapped.corrSectorLong!)).toBeLessThan(0.1)
+    expect(detectCorrelationBreak(inputFor(bars, { sector: withHoliday }))).toBeNull()
+  })
+})
+
+describe('detectQuietRegime', () => {
+  it('fires when a name goes unusually still', () => {
+    // An active year, then a compressed tail: quiet BOTH against its own
+    // history and against its recent self.
+    const bars = makeSeries({
+      days: 300,
+      seed: 701,
+      dailyVol: 0.02,
+      inject: { kind: 'volRegime', times: 0.15, days: 25 },
+    })
+
+    const event = detectQuietRegime(inputFor(bars))
+
+    expect(event).not.toBeNull()
+    expect(event!.direction).toBe(0)
+    expect(event!.headline).toMatch(/Unusually still/)
+  })
+
+  it('does NOT fire on a name that is always quiet', () => {
+    // The distinction the product depends on: this detector reports a name
+    // that HAS GONE quiet, not one that simply is quiet. A permanently sleepy
+    // name would otherwise republish the same non-news every session.
+    const bars = makeSeries({ days: 300, seed: 702, dailyVol: 0.004 })
+
+    expect(detectQuietRegime(inputFor(bars))).toBeNull()
+  })
+
+  it('does NOT fire on an ordinary active name', () => {
+    const bars = makeSeries({ days: 300, seed: 703, dailyVol: 0.018 })
+
+    expect(detectQuietRegime(inputFor(bars))).toBeNull()
+  })
+
+  it('does NOT fire while volatility is expanding', () => {
+    const bars = makeSeries({
+      days: 300,
+      seed: 704,
+      dailyVol: 0.01,
+      inject: { kind: 'volRegime', times: 3, days: 25 },
+    })
+
+    expect(detectQuietRegime(inputFor(bars))).toBeNull()
+  })
+
+  it('returns null rather than guessing when history is too short', () => {
+    const bars = makeSeries({ days: 62, seed: 705, dailyVol: 0.02 })
+    const f = computeFeatures('TEST', bars, [], [])!
+
+    expect(f.rv10Pct).toBeNull()
+    expect(detectQuietRegime(inputFor(bars))).toBeNull()
   })
 })
 

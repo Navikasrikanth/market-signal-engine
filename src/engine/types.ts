@@ -7,7 +7,10 @@
  */
 
 /** Bump whenever detector or scorer behaviour changes. Stamped onto every event. */
-export const ENGINE_VERSION = 'v1'
+// v2: feature vector gained corrSectorShort/Long and rv10Pct; the detector set
+// gained correlation_break and quiet_regime. Events computed under v1 describe a
+// different engine, and stamping them the same would make provenance a lie.
+export const ENGINE_VERSION = 'v2'
 export const SCORER_VERSION = 'v1'
 
 // ---------------------------------------------------------------- input

@@ -1,14 +1,14 @@
 # Calibration report
 
-Generated 2026-09-04 · engine `v1` · scorer `v1`
+Generated 2026-09-04 · engine `v2` · scorer `v1`
 
-Window: **2023-01-01 → present** · 17 equities · 2591 events across 1750 active instrument-days
+Window: **2023-01-01 → present** · 17 equities · 3474 events across 2547 active instrument-days
 
 ## The number being tuned
 
-**1.09 surfaced instrument-days per name per month** (target 1–2) — within budget
+**1.49 surfaced instrument-days per name per month** (target 1–2) — within budget
 
-For the reference user (17 names, ~8.7 visits/month) that is **2.1 items in a typical brief**, against an attention budget of 5.
+For the reference user (17 names, ~8.7 visits/month) that is **2.9 items in a typical brief**, against an attention budget of 5.
 
 The unit is an instrument-DAY, not an event: a day on which three
 detectors fire on one name is a single interruption, not three.
@@ -23,30 +23,32 @@ opening, regardless of how correct each alert was.
 
 | Severity | Instrument-days | Share |
 |---|---:|---:|
-| CRITICAL | 28 | 1.6% |
-| IMPORTANT | 173 | 9.9% |
-| WATCH | 614 | 35.1% |
-| INFO | 389 | 22.2% |
-| NOISE | 546 | 31.2% |
+| CRITICAL | 28 | 1.1% |
+| IMPORTANT | 173 | 6.8% |
+| WATCH | 914 | 35.9% |
+| INFO | 639 | 25.1% |
+| NOISE | 793 | 31.1% |
 
 ## By detector
 
 | Detector | Fired | On a surfaced day | Share |
 |---|---:|---:|---:|
-| `range_break` | 888 | 285 | 32.1% |
-| `sector_divergence` | 765 | 528 | 69.0% |
+| `range_break` | 888 | 292 | 32.9% |
+| `sector_divergence` | 765 | 530 | 69.3% |
+| `quiet_regime` | 647 | 300 | 46.4% |
 | `volume_spike` | 438 | 430 | 98.2% |
 | `move_since_last_seen` | 370 | 343 | 92.7% |
+| `correlation_break` | 236 | 42 | 17.8% |
 | `vol_regime_shift` | 130 | 33 | 25.4% |
 
 ## Follow-through (precision proxy)
 
 Share of surfaced events followed by a ≥1.5σ move within 3 sessions:
 
-- **surfaced events: 19.9%** (162/814)
+- **surfaced events: 21.0%** (234/1114)
 - every session, as a baseline: 15.3% (2385/15606)
 
-Lift over "look every day": **1.30×**
+Lift over "look every day": **1.37×**
 
 This is a proxy, not ground truth — nobody labelled these events, and
 "did the user care?" cannot be measured before the product has users.
@@ -58,23 +60,23 @@ at or below 1.0 would mean the engine is no better than looking daily.
 
 | Symbol | Events | Active days | Surfaced days | Per month |
 |---|---:|---:|---:|---:|
-| AVGO | 167 | 108 | 64 | 1.45 |
-| ORCL | 205 | 133 | 60 | 1.36 |
-| AAPL | 162 | 108 | 59 | 1.34 |
-| QCOM | 164 | 111 | 57 | 1.30 |
-| INTC | 164 | 104 | 54 | 1.23 |
-| ADBE | 168 | 110 | 54 | 1.23 |
-| PLTR | 160 | 102 | 51 | 1.16 |
-| NFLX | 137 | 88 | 50 | 1.14 |
-| CRM | 165 | 108 | 49 | 1.11 |
-| META | 149 | 104 | 45 | 1.02 |
-| MU | 151 | 107 | 44 | 1.00 |
-| AMD | 153 | 106 | 43 | 0.98 |
-| GOOGL | 139 | 94 | 41 | 0.93 |
-| MSFT | 138 | 99 | 40 | 0.91 |
-| AMZN | 122 | 79 | 38 | 0.86 |
-| NVDA | 120 | 93 | 33 | 0.75 |
-| TSLA | 127 | 96 | 33 | 0.75 |
+| AAPL | 234 | 166 | 80 | 1.82 |
+| AVGO | 207 | 147 | 78 | 1.77 |
+| QCOM | 201 | 148 | 76 | 1.73 |
+| NFLX | 209 | 154 | 73 | 1.66 |
+| ADBE | 230 | 165 | 72 | 1.64 |
+| PLTR | 224 | 165 | 70 | 1.59 |
+| MU | 194 | 144 | 67 | 1.52 |
+| ORCL | 249 | 174 | 67 | 1.52 |
+| CRM | 228 | 162 | 67 | 1.52 |
+| INTC | 199 | 137 | 64 | 1.45 |
+| META | 200 | 151 | 62 | 1.41 |
+| GOOGL | 191 | 145 | 60 | 1.36 |
+| AMD | 214 | 151 | 59 | 1.34 |
+| AMZN | 179 | 128 | 58 | 1.32 |
+| MSFT | 188 | 146 | 56 | 1.27 |
+| NVDA | 167 | 138 | 55 | 1.25 |
+| TSLA | 160 | 126 | 51 | 1.16 |
 
 ## Parameters in force
 
@@ -87,6 +89,10 @@ detector thresholds
   rangeBreakAtr                    0.5
   volRegimeRatio                   2
   earningsHours                    48
+  corrBreakBaseline                0.6
+  corrBreakDrop                    0.45
+  quietPercentile                  0.05
+  quietContraction                 0.6
 
 scorer family weights
   event                            0.28

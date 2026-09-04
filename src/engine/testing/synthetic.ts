@@ -222,10 +222,16 @@ function round2(x: number): number {
  */
 export function makeCorrelatedSeries(
   base: Bar[],
-  rho: number,
+  /**
+   * Constant, or a function of the bar index. The function form exists to build
+   * a proxy whose relationship CHANGES partway through - the only way to test
+   * correlation-break honestly, since a fixed rho can never break.
+   */
+  rho: number | ((i: number) => number),
   opts: { seed?: number; dailyVol?: number; startPrice?: number } = {},
 ): Bar[] {
   const { seed = 7, dailyVol = 0.01, startPrice = 100 } = opts
+  const rhoAt = typeof rho === 'function' ? rho : () => rho
   const next = rng(seed)
 
   const out: Bar[] = []
@@ -238,8 +244,9 @@ export function makeCorrelatedSeries(
     } else {
       const baseRet = Math.log(base[i].closeAdj / base[i - 1].closeAdj)
       const idiosyncratic = gaussian(next) * dailyVol
+      const r = rhoAt(i)
       // Standard construction: rho * signal + sqrt(1-rho^2) * independent noise.
-      logRet = rho * baseRet + Math.sqrt(Math.max(0, 1 - rho * rho)) * idiosyncratic
+      logRet = r * baseRet + Math.sqrt(Math.max(0, 1 - r * r)) * idiosyncratic
     }
     price = price * Math.exp(logRet)
 
