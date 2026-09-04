@@ -60,6 +60,11 @@ export default async function Page() {
       )}
 
       <div className="mt-8 flex flex-col gap-4">
+        <Chronology
+          entries={sitrep.chronology}
+          cameAndWent={sitrep.cameAndWent}
+        />
+
         <StoryBlock narrative={sitrep.narrative} />
 
         {sitrep.themes.map((theme) => (
@@ -136,6 +141,19 @@ function Header({
               : "HERE'S WHAT CHANGED SINCE YOU LAST CHECKED"}
           </p>
 
+          {/*
+            Ground the window in a recorded fact rather than a computed
+            estimate. The cursor says when the data was last acknowledged; the
+            sign-in audit says when the person was actually last here.
+          */}
+          {sitrep.previousVisit && (
+            <p className="mt-1 text-xs text-[color:var(--ink-3)]">
+              You last signed in on{' '}
+              {sitrep.previousVisit.at.toISOString().slice(0, 10)} at{' '}
+              {sitrep.previousVisit.at.toISOString().slice(11, 16)} UTC.
+            </p>
+          )}
+
           <div className="mt-2 flex items-center justify-between gap-4">
             <p className="text-lg text-[color:var(--ink-2)]">
               {sitrep.items.length === 0
@@ -191,6 +209,71 @@ function StalenessWarning({
       )}
       Treat this brief as incomplete rather than as a quiet market.
     </div>
+  )
+}
+
+/**
+ * What happened, in order — and what came and went.
+ *
+ * The ranked cards answer "what matters now". This answers "what happened",
+ * which is what someone returning after a fortnight asks first and which
+ * ranking structurally cannot tell them: ranking only sees the present, so an
+ * event that fired and resolved while they were away is invisible in it. That
+ * is a silent omission, and it is exactly what "you missed" means.
+ */
+function Chronology({
+  entries,
+  cameAndWent,
+}: {
+  entries: Awaited<ReturnType<typeof buildSitrep>>['chronology']
+  cameAndWent: Awaited<ReturnType<typeof buildSitrep>>['cameAndWent']
+}) {
+  if (entries.length === 0 && cameAndWent.length === 0) return null
+
+  return (
+    <section className="rounded-lg border border-[color:var(--border)] bg-[color:var(--surface)] p-4">
+      <h2 className="mb-3 font-mono text-[10px] tracking-wider text-[color:var(--ink-3)]">
+        WHILE YOU WERE AWAY
+      </h2>
+
+      {entries.length > 0 && (
+        <ol className="flex flex-col gap-2 border-l border-[color:var(--border-strong)] pl-4">
+          {entries.map((e, i) => (
+            <li key={`${e.date}-${e.symbol}-${i}`} className="text-sm">
+              <span className="tabular font-mono text-[11px] text-[color:var(--ink-3)]">
+                {e.date}
+                {e.timeOfDay ? ` ${e.timeOfDay}` : ''}
+              </span>
+              <span className="ml-2 text-[color:var(--ink-2)]">
+                {e.symbol ? `${e.symbol} — ` : ''}
+                {e.text}
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
+
+      {cameAndWent.length > 0 && (
+        <div className="mt-4 border-t border-[color:var(--border)] pt-3">
+          <p className="mb-2 font-mono text-[10px] tracking-wider text-[color:var(--ink-3)]">
+            CAME AND WENT
+          </p>
+          <ul className="flex flex-col gap-1 text-sm text-[color:var(--ink-2)]">
+            {cameAndWent.map((c) => (
+              <li key={c.symbol}>
+                <span className="font-mono text-xs">{c.symbol}</span> · {c.date}{' '}
+                — {c.headline}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-[color:var(--ink-3)]">
+            These are no longer ranked, because they are no longer true. They
+            are here because they happened while you were gone, and a brief that
+            only shows what still holds would never mention them at all.
+          </p>
+        </div>
+      )}
+    </section>
   )
 }
 

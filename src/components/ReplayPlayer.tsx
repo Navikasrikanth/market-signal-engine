@@ -36,10 +36,25 @@ export function ReplayPlayer({
   const nextInteresting = interesting.find((i) => i > index)
 
   if (!step) {
+    // A user picking an arbitrary window will land on one with no data, and
+    // often. Saying which windows exist is more useful than reporting an
+    // absence, and far better than rendering an empty player that looks broken.
     return (
-      <p className="mt-8 text-sm text-[color:var(--ink-3)]">
-        No data for this window.
-      </p>
+      <section className="mt-8 rounded-lg border border-[color:var(--border)] bg-[color:var(--surface)] p-6">
+        <p className="font-mono text-[10px] tracking-wider text-[color:var(--ink-3)]">
+          NO DATA FOR THIS WINDOW
+        </p>
+        <p className="mt-3 text-sm leading-relaxed text-[color:var(--ink-2)]">
+          Nothing is stored for {scenario.startDate} to {scenario.endDate}.
+        </p>
+        <p className="mt-2 text-xs leading-relaxed text-[color:var(--ink-3)]">
+          The committed fixtures cover the featured scenario windows and roughly
+          the last two years, rather than the full history — a complete
+          decade-long series for the whole universe would be too large to keep
+          in the repository. With API keys configured, any window the providers
+          serve can be backfilled.
+        </p>
+      </section>
     )
   }
 
@@ -115,6 +130,38 @@ export function ReplayPlayer({
         <p className="mt-2 font-mono text-[10px] text-[color:var(--ink-3)]">
           rule: {step.narrative.ruleId}
         </p>
+
+        {/*
+          What else was going on. The phrasing is always temporal — the engine
+          has no evidence of a mechanism and does not pretend to one. When
+          nothing matches, saying so is the honest answer; attaching the
+          nearest available headline is how a plausible false explanation gets
+          made.
+        */}
+        <div className="mt-4 border-t border-[color:var(--border)] pt-3">
+          <h4 className="mb-1 font-mono text-[10px] tracking-wider text-[color:var(--ink-3)]">
+            HISTORICAL CONTEXT
+          </h4>
+          {step.context ? (
+            <>
+              <p className="text-sm leading-relaxed text-[color:var(--ink-2)]">
+                {step.context.sentence}
+              </p>
+              <p className="mt-1 text-xs leading-relaxed text-[color:var(--ink-3)]">
+                {step.context.description}
+              </p>
+              <p className="mt-2 font-mono text-[10px] text-[color:var(--ink-3)]">
+                {step.context.band} confidence · {step.context.confidence}% ·
+                curated, source: {step.context.source}
+              </p>
+            </>
+          ) : (
+            <p className="text-xs leading-relaxed text-[color:var(--ink-3)]">
+              No major contextual event was identified in the available
+              historical context.
+            </p>
+          )}
+        </div>
       </section>
 
       {step.themes.map((t) => (

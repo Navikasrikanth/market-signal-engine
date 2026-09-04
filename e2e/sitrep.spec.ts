@@ -222,6 +222,55 @@ test('the track record is published, with its sample sizes', async ({
   await expect(first.getByText(/preceded a real move .*% of the time/).first()).toBeVisible()
 })
 
+test('the brief says what happened, not only what still matters', async ({
+  page,
+}) => {
+  await signIn(page)
+
+  await expect(page.getByText('WHILE YOU WERE AWAY')).toBeVisible()
+
+  // Events that fired AND resolved during the absence are invisible in the
+  // ranked list by construction - ranking only sees the present. Their absence
+  // would be a silent omission of exactly what "you missed" means.
+  await expect(page.getByText('CAME AND WENT')).toBeVisible()
+  await expect(
+    page.getByText(/no longer ranked, because they are no longer true/),
+  ).toBeVisible()
+})
+
+test('replay runs an arbitrary window and never invents a cause', async ({
+  page,
+}) => {
+  await signIn(page)
+
+  // A user-chosen range, through the same pipeline as the featured examples.
+  await page.goto('/replay?from=2026-06-01&to=2026-06-30')
+  await expect(
+    page.getByRole('heading', { name: /Watch the engine work/ }),
+  ).toBeVisible()
+  await expect(page.getByText('HISTORICAL CONTEXT').first()).toBeVisible()
+
+  // A window with nothing stored says which windows exist, rather than
+  // rendering an empty player that looks broken.
+  await page.goto('/replay?from=2015-01-05&to=2015-01-20')
+  await expect(page.getByText('NO DATA FOR THIS WINDOW')).toBeVisible()
+
+  // The language rule, asserted on screen rather than only in the engine.
+  const body = await page.locator('main').innerText()
+  expect(body).not.toMatch(/caused|because of|due to/i)
+
+  // The featured window reaches a day the curated table knows about, and
+  // still only ever says the two things coincided.
+  await page.goto('/replay?s=semis-selloff')
+  for (let i = 0; i < 3; i++) {
+    const skip = page.getByRole('button', { name: /skip to next event/ })
+    if (!(await skip.isVisible().catch(() => false))) break
+    await skip.click()
+  }
+  const semis = await page.locator('main').innerText()
+  expect(semis).not.toMatch(/caused/i)
+})
+
 test('the pipeline page reports data quality and queue state', async ({
   page,
 }) => {

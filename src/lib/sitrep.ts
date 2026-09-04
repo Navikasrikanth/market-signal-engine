@@ -18,6 +18,8 @@ import type {
 import { MARKET_BENCHMARK } from './universe'
 import { sessionsBehind, tradingDaysBetween } from './market-calendar'
 import { cached, invalidateUser, TTL } from './cache'
+import { buildChronology, findCameAndWent } from './briefing'
+import { previousSignIn } from './auth'
 
 /**
  * The SITREP: what changed since this user last looked.
@@ -35,6 +37,16 @@ const SURFACED: Severity[] = ['CRITICAL', 'IMPORTANT', 'WATCH']
 
 /** Default number of cards. Deliberately small; see docs/calibration.md. */
 export const DEFAULT_ATTENTION_BUDGET = 5
+
+export interface ChronologyEntry {
+  /** `YYYY-MM-DD` */
+  date: string
+  /** Session time when known, from 15-minute bars. Null for older dates. */
+  timeOfDay: string | null
+  kind: 'move' | 'theme' | 'earnings'
+  symbol: string | null
+  text: string
+}
 
 export interface SitrepItem {
   symbol: string
@@ -78,6 +90,24 @@ export interface SitrepResult {
   withinNormalRange: number
   /** Names the user actively silenced. Never folded into "normal range". */
   snoozedCount: number
+  /**
+   * What happened, in order, while the user was away.
+   *
+   * The ranked cards answer "what matters now". This answers "what happened",
+   * which is a different question and the one a returning user actually asks
+   * first.
+   */
+  chronology: ChronologyEntry[]
+  /**
+   * Events that fired AND resolved during the absence.
+   *
+   * Invisible in the ranked list by construction: ranking only sees what is
+   * still true. Without this the brief silently omits the thing the user most
+   * plainly missed.
+   */
+  cameAndWent: Array<{ symbol: string; headline: string; date: string }>
+  /** The visit before this one, for the opening line. */
+  previousVisit: { at: Date; newDevice: boolean } | null
   /**
    * Per-SIGNAL track record, so a reason can be shown next to how often that
    * kind of reason has preceded a real move. Keyed by signal key, which is what
@@ -436,6 +466,16 @@ export async function buildSitrep(userId: string): Promise<SitrepResult> {
   // never mistaken for an outage.
   const freshnessCheck = await checkFreshness(instrumentIds)
 
+  // The absence, as a sequence rather than a ranking. Answers the question a
+  // returning user actually asks first.
+  const chronology = await buildChronology(instrumentIds, since)
+  const cameAndWent = await findCameAndWent(
+    instrumentIds,
+    since,
+    shown.map((i) => i.symbol),
+  )
+  const prior = await previousSignIn(userId)
+
   const freshness = await db.dataFreshness.findMany({
     orderBy: { lastSuccess: 'asc' },
     take: 1,
@@ -455,6 +495,17 @@ export async function buildSitrep(userId: string): Promise<SitrepResult> {
     budget,
     withinNormalRange,
     snoozedCount: snoozedInstruments.size,
+    chronology,
+    cameAndWent,
+    previousVisit: prior
+      ? {
+          at: prior.at,
+          // A different user-agent is worth mentioning; it is also the only
+          // device signal available without fingerprinting, which this
+          // project deliberately does not do.
+          newDevice: false,
+        }
+      : null,
     trackRecord,
     belowBudget,
     watchlistSize: rows.length,
@@ -579,6 +630,9 @@ function emptyResult(displayName: string, attentionBudget: number): SitrepResult
     budget: { CRITICAL: 0, IMPORTANT: 0, WATCH: 0, INFO: 0, NOISE: 0 },
     withinNormalRange: 0,
     snoozedCount: 0,
+    chronology: [],
+    cameAndWent: [],
+    previousVisit: null,
     trackRecord: {},
     belowBudget: 0,
     watchlistSize: 0,
