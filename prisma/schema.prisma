@@ -42,14 +42,42 @@ model User {
 model Session {
   id        String   @id @default(uuid())
   userId    String
+  /// SHA-256 of the token held in the cookie. The token itself is never
+  /// stored: previously the row id WAS the token, so anyone who could read
+  /// this table - a backup, a log, an injection - held 30 days of account
+  /// takeover for every user at once.
+  tokenHash String   @unique
+  /// Absolute expiry. A session dies at this point however active it is.
   expiresAt DateTime
+  /// Idle expiry, slid forward on use. Bounds an abandoned session on a
+  /// shared machine, which the absolute cap alone does not.
+  lastUsedAt DateTime @default(now())
   createdAt DateTime @default(now())
+  ip        String?
+  userAgent String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([expiresAt])
   @@map("sessions")
+}
+
+/// Failed sign-in attempts, for backoff and lockout.
+///
+/// Keyed by email AND ip so neither a single account nor a single origin can
+/// be ground down: without this, an eight-character password is guessable
+/// because nothing at all limits the rate.
+model LoginAttempt {
+  id        String   @id @default(uuid())
+  email     String
+  ip        String
+  attemptAt DateTime @default(now())
+  succeeded Boolean  @default(false)
+
+  @@index([email, attemptAt])
+  @@index([ip, attemptAt])
+  @@map("login_attempts")
 }
 
 // ---------------------------------------------------------------- watchlist

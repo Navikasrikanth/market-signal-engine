@@ -1,5 +1,5 @@
 import 'dotenv/config'
-import bcrypt from 'bcryptjs'
+import { hashPassword } from '../src/lib/auth'
 import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { UNIVERSE, DEMO_WATCHLIST } from '../src/lib/universe'
@@ -8,7 +8,10 @@ const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! })
 const db = new PrismaClient({ adapter })
 
 const DEMO_EMAIL = 'demo@sitrep.local'
-const DEMO_PASSWORD = 'sitrep-demo'
+// At least 12 characters, so the demo account satisfies the same policy
+// `register` enforces. Shipping a demo credential that the product's own
+// rules would reject invites exactly one question, and it has no good answer.
+const DEMO_PASSWORD = 'sitrep-demo-2026'
 
 async function seedInstruments() {
   // Two passes: every instrument must exist before we can wire the
@@ -87,7 +90,10 @@ async function seedDataSources() {
 }
 
 async function seedDemoUser() {
-  const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 10)
+  // Via hashPassword, not bcrypt directly, so the seed cannot drift from the
+  // application's cost factor - it was still hashing at 10 after auth moved
+  // to 12.
+  const passwordHash = await hashPassword(DEMO_PASSWORD)
 
   const user = await db.user.upsert({
     where: { email: DEMO_EMAIL },

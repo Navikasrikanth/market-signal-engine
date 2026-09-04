@@ -22,7 +22,7 @@ test.beforeAll(() => {
 async function signIn(page: Page) {
   await page.goto('/login')
   await page.getByLabel('EMAIL').fill('demo@sitrep.local')
-  await page.getByLabel('PASSWORD').fill('sitrep-demo')
+  await page.getByLabel('PASSWORD').fill('sitrep-demo-2026')
   await page.getByRole('button', { name: 'Sign in' }).click()
   await expect(page.getByRole('heading', { level: 1 })).toContainText('Navika')
 }

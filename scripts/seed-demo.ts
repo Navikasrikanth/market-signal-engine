@@ -27,6 +27,11 @@ async function main() {
   await db.userWatchState.deleteMany({ where: { userId: user.id } })
   await db.userEventState.deleteMany({ where: { userId: user.id } })
 
+  // Clear failed sign-ins too. Resetting the demo has to reset ALL of the
+  // demo's state: a run of bad passwords from a previous session would
+  // otherwise lock the account out and make the next demo look broken.
+  await db.loginAttempt.deleteMany({ where: { email: user.email } })
+
   const planted = await ensureCursors(user.id, since)
 
   // A little variety in priority, so the Why panel has something to explain

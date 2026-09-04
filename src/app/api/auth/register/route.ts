@@ -4,7 +4,9 @@ import { handler, ok, parseBody } from '@/lib/api'
 
 const schema = z.object({
   email: z.string().email(),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
+  // Length is checked again in `passwordProblem`, alongside the dictionary
+  // floor. Kept here so an obviously-short password fails before any hashing.
+  password: z.string().min(12, 'Password must be at least 12 characters'),
   displayName: z.string().max(60).optional().default(''),
 })
 

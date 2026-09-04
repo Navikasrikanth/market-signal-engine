@@ -20,7 +20,7 @@ npm run demo:reset            # seed, load fixtures, compute events, plant a cur
 npm run dev
 ```
 
-Open http://localhost:3000 and sign in as `demo@sitrep.local` / `sitrep-demo`.
+Open http://localhost:3000 and sign in as `demo@sitrep.local` / `sitrep-demo-2026`.
 
 | Page | What it shows |
 |---|---|
@@ -30,7 +30,7 @@ Open http://localhost:3000 and sign in as `demo@sitrep.local` / `sitrep-demo`.
 | `/admin/pipeline` | Ingest runs, data quality, engine version |
 
 ```bash
-npm test              # 144 unit tests, engine + ingestion
+npm test              # 153 unit tests, engine + ingestion
 npm run test:e2e      # 4 Playwright journeys through a real browser
 npm run calibrate     # replay history, rewrite docs/calibration.md
 npx tsx scripts/verify-requirements.ts   # 30 checks against the brief's minimums
@@ -279,9 +279,28 @@ Replay is only honest if the engine at date *T* sees exactly what it would have 
 
 ---
 
+## Authentication
+
+Thin by design — email and password, no OAuth, no reset flow, no verification. It exists because the assignment requires state to persist across sessions and devices, which needs an identity. But thin is not the same as sloppy:
+
+| | |
+|---|---|
+| **Tokens are never stored** | 256-bit CSPRNG value in the cookie; only its SHA-256 in the database. A stolen backup yields no usable session. The row id *used to be* the token. |
+| **Rate limited and locked out** | Failures counted independently by email **and** by IP, so rotating IPs cannot dodge the account counter. Backoff at 5, lock at 10, 15-minute rolling window. A success clears that account's failures — but not the origin's, or an attacker on shared NAT could reset their own throttle. |
+| **Two clocks** | Absolute 30-day cap *and* a 7-day idle timeout. The cap alone leaves an abandoned session on a shared machine valid for a month. |
+| **Password floor** | bcrypt cost 12, 12-character minimum, and a dictionary check — because `password1234` is twelve characters. |
+| **Cross-origin writes refused** | `SameSite=Lax` already blocks them; the explicit `Origin`/`Host` check states the guarantee in code rather than inheriting it from a cookie attribute someone might later change. |
+| **Sign out everywhere** | The one control that matters after a password is exposed. |
+
+There is **no `SESSION_SECRET`**, and its absence is deliberate: a 256-bit random token that is hashed at rest has nothing to sign. It was previously declared in `.env` and read by no code, which is worse than not having it.
+
+Run `npx tsx scripts/verify-auth.ts` — 12 checks against real Postgres, including that the bearer token appears nowhere in the sessions table.
+
+---
+
 ## Testing
 
-144 unit tests, 6 browser journeys, and 30 scored checks against the brief's three minimums.
+153 unit tests, 6 browser journeys, 30 scored checks against the brief's three minimums, and 12 auth checks against real Postgres.
 
 Every detector has a **firing fixture and a must-not-fire fixture** — a detector that only ever fires is indistinguishable from a broken one, and on a product whose promise is filtering noise, false positives are the expensive failure.
 
@@ -295,7 +314,7 @@ Several tests exist specifically to pin down bugs that were written and then cau
 - a 2:1 split deliberately passes the validator — documented as a limitation rather than faked
 
 The browser suite is deliberately thin: four journeys covering the three
-minimums plus replay. Broad UI coverage of a product whose logic already has 144
+minimums plus replay. Broad UI coverage of a product whose logic already has 153
 unit tests would be slow to run, slower to maintain, and would mostly re-test
 React. It did earn its place immediately though — it caught the acknowledge
 button hiding a card optimistically without ever re-reading the brief, so the
