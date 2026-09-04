@@ -30,10 +30,10 @@ Open http://localhost:3000 and sign in as `demo@sitrep.local` / `sitrep-demo-202
 | `/admin/pipeline` | Ingest runs, data quality, engine version |
 
 ```bash
-npm test              # 153 unit tests, engine + ingestion
+npm test              # 201 unit tests, engine + ingestion
 npm run test:e2e      # 4 Playwright journeys through a real browser
 npm run calibrate     # replay history, rewrite docs/calibration.md
-npx tsx scripts/verify-requirements.ts   # 30 checks against the brief's minimums
+npm run verify        # 69 checks: requirements, auth, ingestion, cache
 ```
 
 ### Background ingestion (optional, needs API keys)
@@ -51,6 +51,85 @@ an hourly quota rather than a transient blip, and when the batch drains it
 enqueues **one** recompute — not one per symbol, because a name's features
 depend on the benchmark and sector proxies and computing mid-batch would read a
 half-updated universe.
+
+---
+
+## The seven judgement calls
+
+The brief leaves six decisions to the candidate. Each answer below says what is built **and what is not**, because the gaps are what make the rest believable.
+
+### 1. What counts as meaningful change?
+
+Six of the eight detectors give the obvious answer: *the price did something unusual*. The last two do not, and they are the real answer.
+
+**`correlation_break`** — a name that tracked its sector at 0.85 for six months and now tracks it at 0.15 has changed in a way no price move describes. The move may be small, or absent, while the thing the position actually depended on has gone.
+
+**`quiet_regime`** — the only detector that fires on the *absence* of movement. A name compressed into the quietest 5% of its own year is not "nothing happening": low realised volatility is the precondition for expansion.
+
+Both are the best-performing detectors in the engine (1.70× and 1.53× over baseline). That was not the argument for building them; it is the argument for keeping them.
+
+The sharper claim: **meaningful is relative to the observer.** `move_since_last_seen` divides by `σ·√Δt`, so the same market produces a different event for someone who checked yesterday than for someone who checked last month. No fixed threshold can express that.
+
+**Beyond equities** — the engine needs only OHLCV plus a benchmark and a peer proxy, so it is asset-agnostic in principle. The honest test is **crypto**, because it *breaks* assumptions rather than reusing them: `sessionsSinceLastSeen` counts trading days and would have to become elapsed time; `MIN_HISTORY` and `BETA_WINDOW` are session counts; and `earnings_upcoming` has nothing to fire on. Designed, deliberately not built — naming the three breakages is worth more than a half-migrated ticker.
+
+### 2. What information to surface
+
+An attention budget of five, severity bands, *Why not higher*, a per-detector track record, themes, a rule-based narrative, and a chronology of the absence.
+
+The argument: **the product is defined by what it refuses to show.** Calibration tunes to 1.49 surfaced instrument-days per name per month — a number chosen so a typical brief is about three items rather than twenty. Four populations are counted separately and never folded together:
+
+| | means |
+|---|---|
+| below your attention budget | the engine flagged it; the budget cut it |
+| within normal range | the engine looked and found nothing |
+| snoozed | *you* silenced it; still pending |
+| came and went | it happened and resolved while you were away |
+
+### 3. How state persists across sessions and devices
+
+`UserWatchState(userId, instrumentId)` holds `lastSeenAt` and `cursorVersion`, server-side.
+
+- **Loading the brief never advances the cursor.** A glance on a phone cannot wipe the brief waiting on a laptop.
+- **Mark seen and snooze are different operations.** One moves the cursor; one deliberately does not.
+- **Recency decay runs from the cursor, not the clock.** Every event past the cursor is unseen *by definition*.
+
+**Not built:** `cursorVersion` exists for optimistic concurrency and **nothing currently sends it**, so the 409 path is unexercised. It is a schema affordance, not an enforced guarantee.
+
+### 4. Stale, delayed and conflicting data
+
+- Two providers reconciled onto **one adjustment basis** — the mismatch that produced 68,733 phantom conflicts before being fixed, now 8 real ones in 33,616 bars.
+- **`unconfirmed` ≠ `single source`.** Sources disagreeing is a different claim from only one reporting.
+- **Sanity can overrule trust**, but only when the trusted value is impossible *and* the alternative is plausible — judged against the instrument's own recent closes and its own typical move, never a fixed percentage. Every resolution records why.
+- **Staleness is measured in trading sessions.** `now − lastBar > 24h` flags every Saturday, which trains a user to ignore the warning by the time it is true.
+- **Late data is a new row, not an UPDATE.** Corrections are visible as corrections.
+- **A failed fetch never overwrites known-good data.** An absence of information is not evidence that what is stored is wrong.
+
+### 5. How it scales
+
+Features, events and themes are computed **once per instrument** and shared; a SITREP is an `O(watchlist)` filter over rows that already exist. Adding users adds reads, never analytical work. The per-instrument window statistics — the actual `O(watchlist)` cost — are cached, with generation invalidation rather than TTL guessing.
+
+**The limits, because a reviewer will find them:** compute is a **full recompute**, correct and idempotent but `O(universe × history)` per run; the incremental path is designed and deliberately deferred, because a rolling 120-day correlation that is not invalidated correctly produces a silently different answer. And every number here was measured at **26 instruments and one user**.
+
+### 6. Simple vs complex
+
+Complexity was bought for the engine, calibration, reconciliation, and the cursor. It was refused for: no LLM in the conclusion path, no learning loop, no SSE or WebSocket, no tick data, no IEX-only feed, a rule-table narrative, eight detectors rather than twenty.
+
+The line: **complexity went where being wrong is expensive and invisible.** A wrong score is invisible. A wrong colour is not.
+
+### 7. Data provenance
+
+For a product whose thesis is explainability, an unsourced number is a contradiction.
+
+| | comes from |
+|---|---|
+| Market prices | Twelve Data (primary) and Tiingo (secondary), reconciled |
+| Resolved values | the validation and reconciliation layer, with a stored reason code |
+| Intraday timing | Twelve Data 15-minute bars, 30-day retention, **never analytical** |
+| Earnings | Finnhub, forward calendar only |
+| News | Finnhub, live only — ~2 days of history |
+| Historical context | a **curated** table, every row carrying a source |
+| Signals and scores | the deterministic engine, version-stamped |
+| Ranking | SITREP scoring, under the user's own priority and intent |
 
 ---
 
@@ -300,7 +379,7 @@ Run `npx tsx scripts/verify-auth.ts` — 12 checks against real Postgres, includ
 
 ## Testing
 
-153 unit tests, 6 browser journeys, 30 scored checks against the brief's three minimums, and 12 auth checks against real Postgres.
+201 unit tests, 8 browser journeys, and 69 checks against real Postgres and Redis across four verification suites — requirements, auth, ingestion and cache.
 
 Every detector has a **firing fixture and a must-not-fire fixture** — a detector that only ever fires is indistinguishable from a broken one, and on a product whose promise is filtering noise, false positives are the expensive failure.
 
@@ -314,7 +393,7 @@ Several tests exist specifically to pin down bugs that were written and then cau
 - a 2:1 split deliberately passes the validator — documented as a limitation rather than faked
 
 The browser suite is deliberately thin: four journeys covering the three
-minimums plus replay. Broad UI coverage of a product whose logic already has 153
+minimums plus replay. Broad UI coverage of a product whose logic already has 201
 unit tests would be slow to run, slower to maintain, and would mostly re-test
 React. It did earn its place immediately though — it caught the acknowledge
 button hiding a card optimistically without ever re-reading the brief, so the
@@ -336,10 +415,43 @@ Named because they were decisions, not oversights.
 
 ---
 
+## Retention and operations
+
+Nothing grows without a stated policy:
+
+| | kept |
+|---|---|
+| Daily bars | project lifetime |
+| Intraday bars | 30 days |
+| Dead letters | 90 days |
+| Login audit | 90 days |
+| Sessions | until expiry, swept hourly |
+| Raw provider responses | not retained |
+
+Swept by the worker's `maintenance` job, which is the one scheduled task that ignores the market calendar entirely.
+
+**Backup and restore** — Postgres data lives in the `sitrep_pgdata` Docker volume and survives `docker compose down`. To take a snapshot:
+
+```bash
+docker exec sitrep-postgres pg_dump -U sitrep sitrep > backup.sql
+```
+
+To restore into a fresh volume:
+
+```bash
+docker exec -i sitrep-postgres psql -U sitrep sitrep < backup.sql
+```
+
+Not automated. This is a local project, and pretending otherwise would be theatre — but knowing where the state lives and how to get it back is not optional.
+
+---
+
 ## Known limitations
 
 - **Backfilling is rate-limited.** Tiingo's free tier allows 50 requests/hour, so a cold backfill of 26 symbols needs two passes an hour apart. `npm run backfill -- --reuse-primary --reuse-secondary` replays whatever is already captured and only fetches what is missing, so re-running costs nothing. During the first pass five symbols were single-source and correctly displayed a `SINGLE SOURCE` badge — degrading visibly rather than silently is the intended behaviour, and the committed fixtures now have full two-source coverage.
-- **Daily bars only.** No intraday, so "since you last checked" resolves to trading days.
+- **Daily is the analytical unit.** 15-minute bars exist, but only to time a recent move within its session; no detector reads them, and with 30-day retention (and ~9 months of free-tier history) **historical replay stays daily by design**. Reconstructing March 2020 intraday is not possible here, and is not pretended to be.
+- **News is live-only.** The free tier returns roughly the most recent 250 articles before a given date — about two days for a liquid name — and nothing at all for January 2025. News therefore never appears in replay. It also comes from very few outlets: 249 articles for one ticker over two days came from **five** sources, which is why coverage is ranked by distinct outlets and never by article count.
+- **Historical context is curated, not sourced live.** A hand-assembled table, every row carrying a source. It is deliberately sparse: most dates match nothing, and saying so is the point.
 - **Split adjustment is trusted to the provider.** The validator is a gross-corruption backstop, not a corporate-actions engine.
 - **Universe is fixed at 26 symbols.** Adding arbitrary tickers means backfilling them first.
 
