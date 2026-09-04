@@ -16,6 +16,7 @@ import type {
   Signal,
 } from '@/engine/types'
 import { MARKET_BENCHMARK } from './universe'
+import { sessionsBehind, tradingDaysBetween } from './market-calendar'
 
 /**
  * The SITREP: what changed since this user last looked.
@@ -91,6 +92,14 @@ export interface SitrepResult {
     stalestSource: string | null
     lagSeconds: number | null
     unconfirmedCount: number
+    /**
+     * Sessions behind the market, by the trading calendar rather than by the
+     * clock. Zero on a Saturday holding Friday's close; two on a Tuesday
+     * afternoon holding the same one.
+     */
+    sessionsBehind: number
+    /** Dates missing from inside the stored series, not merely off the end. */
+    holes: number
   }
 }
 
@@ -418,6 +427,14 @@ export async function buildSitrep(userId: string): Promise<SitrepResult> {
   })
   const latestAsOf = latestBar?.barDate.toISOString().slice(0, 10) ?? null
 
+  // Staleness belongs on the BRIEF, not only on the ops page.
+  //
+  // Once ingestion runs unattended its failures become invisible, and the one
+  // thing this product cannot afford is for missing data to look like a quiet
+  // market. Measured in sessions against the trading calendar, so a weekend is
+  // never mistaken for an outage.
+  const freshnessCheck = await checkFreshness(instrumentIds)
+
   const freshness = await db.dataFreshness.findMany({
     orderBy: { lastSuccess: 'asc' },
     take: 1,
@@ -446,6 +463,8 @@ export async function buildSitrep(userId: string): Promise<SitrepResult> {
       stalestSource: freshness[0]?.sourceId ?? null,
       lagSeconds: freshness[0]?.lagSeconds ?? null,
       unconfirmedCount: items.filter((i) => !i.confirmed).length,
+      sessionsBehind: freshnessCheck.sessionsBehind,
+      holes: freshnessCheck.holes,
     },
   }
 }
@@ -546,7 +565,13 @@ function emptyResult(displayName: string, attentionBudget: number): SitrepResult
     watchlistSize: 0,
     quiet: true,
     attentionBudget,
-    dataQuality: { stalestSource: null, lagSeconds: null, unconfirmedCount: 0 },
+    dataQuality: {
+      stalestSource: null,
+      lagSeconds: null,
+      unconfirmedCount: 0,
+      sessionsBehind: 0,
+      holes: 0,
+    },
   }
 }
 
@@ -631,6 +656,66 @@ export async function markSeen(
  * Scoped through the user's own watchlist, so an id they do not watch cannot be
  * written into their state - the same ownership check mark-seen applies.
  */
+/**
+ * How far behind the data is, and whether anything is missing from the middle.
+ *
+ * Deliberately calendar-based rather than clock-based: `now - lastBar > 24h`
+ * reports every Saturday as an outage, which trains a user to ignore the
+ * warning exactly when it starts being true.
+ */
+async function checkFreshness(
+  instrumentIds: string[],
+): Promise<{ sessionsBehind: number; holes: number }> {
+  if (instrumentIds.length === 0) return { sessionsBehind: 0, holes: 0 }
+
+  const now = new Date()
+  const latest = await db.dailyBar.findFirst({
+    where: { instrumentId: { in: instrumentIds } },
+    orderBy: { barDate: 'desc' },
+    select: { barDate: true },
+  })
+
+  const latestDate = latest?.barDate.toISOString().slice(0, 10) ?? null
+  const behind = sessionsBehind(latestDate, now)
+
+  // Holes are counted across the watched names only: a gap in an instrument
+  // the user does not watch is an ops problem, not something to put on their
+  // brief.
+  let holes = 0
+  if (latestDate) {
+    const scanFrom = tradingDaysBetween(
+      new Date(now.getTime() - 45 * 86_400_000).toISOString().slice(0, 10),
+      latestDate,
+    )
+    const expected = new Set(scanFrom)
+    const stored = await db.dailyBar.findMany({
+      where: {
+        instrumentId: { in: instrumentIds },
+        barDate: { gte: new Date(`${scanFrom[0] ?? latestDate}T00:00:00Z`) },
+      },
+      select: { instrumentId: true, barDate: true },
+    })
+
+    const byInstrument = new Map<string, Set<string>>()
+    for (const row of stored) {
+      const set = byInstrument.get(row.instrumentId) ?? new Set<string>()
+      set.add(row.barDate.toISOString().slice(0, 10))
+      byInstrument.set(row.instrumentId, set)
+    }
+
+    for (const set of byInstrument.values()) {
+      for (const date of expected) {
+        if (!set.has(date)) holes++
+      }
+    }
+  }
+
+  return {
+    sessionsBehind: Number.isFinite(behind) ? behind : 0,
+    holes,
+  }
+}
+
 export async function snoozeEvents(
   userId: string,
   eventIds: string[],

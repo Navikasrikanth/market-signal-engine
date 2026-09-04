@@ -32,7 +32,27 @@ export interface FieldConflict {
   valueB: number
   deltaPct: number
   resolvedTo: string
+  /** The value actually stored, so the decision needs no re-derivation. */
+  resolvedValue: number
+  /** Why this value won. */
+  reason: ResolutionReason
+  /** True when sanity beat trust — the higher-ranked provider was overruled. */
+  trustOverride: boolean
 }
+
+/**
+ * Why a disagreement resolved the way it did.
+ *
+ * Stored per conflict. A resolution that cannot be audited is indistinguishable
+ * from a guess, and this product's whole claim is that its numbers can be
+ * traced back to a decision.
+ */
+export type ResolutionReason =
+  | 'HIGHER_TRUST_SOURCE'
+  | 'PRIMARY_VALUE_FAILED_HISTORY_SANITY'
+  | 'ONLY_SOURCE'
+
+export const RECONCILIATION_VERSION = 'RECONCILIATION_V2'
 
 export interface ReconciledBar {
   bar: RawBar
@@ -78,12 +98,70 @@ function relativeDelta(a: number, b: number): number {
 }
 
 /**
+ * Recent closes for the instrument, used to judge which of two disagreeing
+ * values is the plausible one. Optional: with no history, trust decides.
+ */
+export interface PriceHistory {
+  /** Most recent closes, any order. A handful is enough. */
+  recentCloses: number[]
+}
+
+/**
+ * How abnormal a candidate price is, in multiples of the instrument's own
+ * typical move. `null` when there is not enough history to judge.
+ *
+ * Deliberately NOT a fixed percentage band. A flat 20% rule is wrong in both
+ * directions: it rejects a legitimate 25% move in a name that routinely moves
+ * 15%, and it accepts a corrupt value in a name that never moves 3%. What
+ * matters is how the candidate sits against THIS instrument's own behaviour.
+ */
+export function abnormality(
+  candidate: number,
+  history: PriceHistory | undefined,
+): number | null {
+  const closes = history?.recentCloses.filter((c) => Number.isFinite(c) && c > 0)
+  if (!closes || closes.length < 3) return null
+
+  const sorted = [...closes].sort((a, b) => a - b)
+  const median = sorted[Math.floor(sorted.length / 2)]
+  if (!(median > 0)) return null
+
+  // Typical single-session move, from the history itself. Floored so a
+  // pathologically flat series cannot make every value look infinitely
+  // abnormal.
+  const moves: number[] = []
+  for (let i = 1; i < closes.length; i++) {
+    const prev = closes[i - 1]
+    if (prev > 0) moves.push(Math.abs(closes[i] / prev - 1))
+  }
+  const typical = Math.max(
+    0.01,
+    moves.length ? moves.reduce((a, b) => a + b, 0) / moves.length : 0.01,
+  )
+
+  return Math.abs(candidate / median - 1) / typical
+}
+
+/**
+ * Beyond this many typical moves, a value is treated as corrupt rather than
+ * dramatic — even when it comes from the more trusted provider.
+ *
+ * Ten typical moves is a long way. A name that usually moves 2% would have to
+ * print 20% off its recent median; the decimal-shift case (a $180 stock
+ * printing $18) lands at roughly 45.
+ */
+const ABNORMAL_LIMIT = 10
+
+/**
  * Reconcile one calendar date across however many sources supplied it.
  *
  * Returns `null` when no source has the bar at all — the caller records that as
  * a gap rather than inventing a value.
  */
-export function reconcileBar(candidates: SourcedBar[]): ReconciledBar | null {
+export function reconcileBar(
+  candidates: SourcedBar[],
+  history?: PriceHistory,
+): ReconciledBar | null {
   if (candidates.length === 0) return null
 
   // Lower trustRank wins. Stable sort keeps behaviour deterministic when two
@@ -106,6 +184,8 @@ export function reconcileBar(candidates: SourcedBar[]): ReconciledBar | null {
 
   const conflicts: FieldConflict[] = []
   const fields: FieldConflict['field'][] = ['open', 'high', 'low', 'close', 'volume']
+  /** Fields where sanity overruled trust, applied to the stored bar below. */
+  const overrides = new Map<FieldConflict['field'], number>()
 
   for (const other of ranked.slice(1)) {
     for (const field of fields) {
@@ -116,26 +196,71 @@ export function reconcileBar(candidates: SourcedBar[]): ReconciledBar | null {
       const delta = relativeDelta(a, b)
       const tolerance = field === 'volume' ? TOLERANCE.volume : TOLERANCE.price
 
-      if (delta > tolerance) {
-        conflicts.push({
-          field,
-          sourceA: primary.sourceId,
-          valueA: a,
-          sourceB: other.sourceId,
-          valueB: b,
-          deltaPct: delta,
-          resolvedTo: primary.sourceId,
-        })
+      if (delta <= tolerance) continue
+
+      // Sanity can beat trust.
+      //
+      // Resolution used to be `resolvedTo: primary.sourceId`, unconditionally.
+      // That meant a corrupt $18 from the higher-trust provider beat a correct
+      // $180 from the other one - the trust ranking decided, and the ranking
+      // has no idea whether a number is possible.
+      let resolvedTo = primary.sourceId
+      let resolvedValue = a
+      let reason: ResolutionReason = 'HIGHER_TRUST_SOURCE'
+      let trustOverride = false
+
+      if (field !== 'volume') {
+        const primaryAbnormality = abnormality(a, history)
+        const otherAbnormality = abnormality(b, history)
+
+        // Override only when the trusted value is IMPOSSIBLE and the
+        // alternative is PLAUSIBLE. Requiring merely "less abnormal" is not
+        // enough: when both values are implausible - stale history, or a
+        // genuine gap the history cannot anticipate - that rule picks the
+        // marginally-less-wrong one and calls it a sanity check. Deferring to
+        // trust and flagging the bar unconfirmed is the honest answer there.
+        if (
+          primaryAbnormality !== null &&
+          otherAbnormality !== null &&
+          primaryAbnormality > ABNORMAL_LIMIT &&
+          otherAbnormality <= ABNORMAL_LIMIT
+        ) {
+          resolvedTo = other.sourceId
+          resolvedValue = b
+          reason = 'PRIMARY_VALUE_FAILED_HISTORY_SANITY'
+          trustOverride = true
+          overrides.set(field, b)
+        }
       }
+
+      conflicts.push({
+        field,
+        sourceA: primary.sourceId,
+        valueA: a,
+        sourceB: other.sourceId,
+        valueB: b,
+        deltaPct: delta,
+        resolvedTo,
+        resolvedValue,
+        reason,
+        trustOverride,
+      })
     }
   }
 
   const priceConflicts = conflicts.filter((c) => UNCONFIRMING_FIELDS.has(c.field))
   const confirmed = priceConflicts.length === 0
 
+  // Apply any overridden fields to the bar that is actually stored. Recording
+  // the decision but persisting the rejected value would be worse than not
+  // deciding at all.
+  const bar = overrides.size
+    ? { ...primary.bar, ...Object.fromEntries(overrides) }
+    : primary.bar
+
   return {
-    bar: primary.bar,
-    source: primary.sourceId,
+    bar,
+    source: overrides.size ? ranked[1].sourceId : primary.sourceId,
     confidence: confidenceFor(priceConflicts),
     confirmed,
     conflicts,
@@ -193,9 +318,20 @@ export function reconcileSeries(
   const conflicts: Array<FieldConflict & { date: string }> = []
   const gapsFilled: string[] = []
 
+  // Rolling recent closes, built as we go, so each date is judged against the
+  // sessions BEFORE it. Using the whole series would let a corrupt value help
+  // decide whether it was itself plausible.
+  const recentCloses: number[] = []
+  const HISTORY_WINDOW = 10
+
   for (const date of [...byDate.keys()].sort()) {
-    const reconciled = reconcileBar(byDate.get(date)!)
+    const reconciled = reconcileBar(byDate.get(date)!, {
+      recentCloses: [...recentCloses],
+    })
     if (!reconciled) continue
+
+    recentCloses.push(reconciled.bar.close)
+    if (recentCloses.length > HISTORY_WINDOW) recentCloses.shift()
 
     bars.push(reconciled)
     for (const c of reconciled.conflicts) conflicts.push({ ...c, date })

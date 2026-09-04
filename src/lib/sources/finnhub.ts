@@ -1,0 +1,199 @@
+import { createHash } from 'node:crypto'
+import type {
+  EarningsSource,
+  NewsSource,
+  RawEarnings,
+  RawNews,
+} from './types'
+import { SourceDataError } from './types'
+
+/**
+ * Finnhub — company news and the forward earnings calendar.
+ *
+ * Two hard limits, both verified rather than assumed, and both shaping the
+ * design rather than being worked around:
+ *
+ * 1. `/stock/candle` is paid. Bars come from Twelve Data and Tiingo instead.
+ *
+ * 2. Company news is effectively live-only. A request returns roughly the most
+ *    recent 250 articles before `to` — for a liquid name that is about TWO
+ *    DAYS — and a January 2025 window returns nothing at all. So news can
+ *    never appear in historical replay, and cannot be backfilled into
+ *    fixtures. The replay page says so rather than letting the absence read as
+ *    a bug.
+ *
+ * A third fact shapes the ranking: 249 articles for one ticker over two days
+ * came from FIVE distinct outlets. Article volume measures syndication, not
+ * importance. Counting distinct outlets is the only signal of significance
+ * this data honestly supports.
+ */
+
+/** Articles kept per symbol per day, after collapsing syndicated copies. */
+const MAX_PER_SYMBOL = 10
+
+export class FinnhubSource implements NewsSource, EarningsSource {
+  readonly id = 'finnhub'
+
+  constructor(private readonly apiKey: string) {
+    if (!apiKey) throw new Error('FINNHUB_API_KEY is not set')
+  }
+
+  async fetchNews(symbol: string, from: string, to: string): Promise<RawNews[]> {
+    const url = new URL('https://finnhub.io/api/v1/company-news')
+    url.searchParams.set('symbol', symbol)
+    url.searchParams.set('from', from)
+    url.searchParams.set('to', to)
+    url.searchParams.set('token', this.apiKey)
+
+    const res = await fetch(url)
+    if (!res.ok) {
+      throw new SourceDataError(this.id, symbol, `HTTP ${res.status}`)
+    }
+
+    const body = (await res.json()) as FinnhubArticle[]
+    if (!Array.isArray(body)) {
+      throw new SourceDataError(this.id, symbol, 'unexpected payload')
+    }
+
+    return body
+      .filter((a) => a.headline && a.url && Number.isFinite(a.datetime))
+      .map((a) => ({
+        publishedAt: new Date(a.datetime * 1000).toISOString(),
+        headline: a.headline.trim(),
+        source: (a.source ?? 'unknown').trim(),
+        url: a.url,
+        summary: a.summary?.trim() || null,
+      }))
+  }
+
+  async fetchEarnings(
+    symbols: string[],
+    from: string,
+    to: string,
+  ): Promise<RawEarnings[]> {
+    const url = new URL('https://finnhub.io/api/v1/calendar/earnings')
+    url.searchParams.set('from', from)
+    url.searchParams.set('to', to)
+    url.searchParams.set('token', this.apiKey)
+
+    const res = await fetch(url)
+    if (!res.ok) {
+      throw new SourceDataError(this.id, symbols[0] ?? '*', `HTTP ${res.status}`)
+    }
+
+    const body = (await res.json()) as {
+      earningsCalendar?: FinnhubEarningsRow[]
+    }
+    const wanted = new Set(symbols)
+
+    return (body.earningsCalendar ?? [])
+      .filter((r) => wanted.has(r.symbol))
+      .map((r) => ({
+        symbol: r.symbol,
+        reportDate: r.date,
+        session: r.hour ?? null,
+        epsEstimate: r.epsEstimate ?? null,
+        epsActual: r.epsActual ?? null,
+      }))
+  }
+}
+
+interface FinnhubArticle {
+  datetime: number
+  headline: string
+  source?: string
+  summary?: string
+  url: string
+}
+
+interface FinnhubEarningsRow {
+  symbol: string
+  date: string
+  hour?: string | null
+  epsEstimate?: number | null
+  epsActual?: number | null
+}
+
+// ---------------------------------------------------------------- ranking
+
+export interface RankedNews extends RawNews {
+  /** Distinct outlets carrying a near-identical headline. */
+  corroboration: number
+  fingerprint: string
+}
+
+/**
+ * Normalise a headline down to what it is actually saying.
+ *
+ * Syndicated copies differ in punctuation, casing, ticker suffixes and
+ * trailing outlet names while reporting the same thing. Reducing to lowercase
+ * alphanumeric words and dropping the short ones collapses them onto the same
+ * key without needing a similarity model.
+ */
+export function headlineKey(headline: string): string {
+  const words = headline
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]/g, ' ')
+    .split(/\s+/)
+    .filter((w) => w.length > 3)
+    .sort()
+  return words.join(' ')
+}
+
+export function newsFingerprint(symbol: string, headline: string, day: string): string {
+  return createHash('sha256')
+    .update(`${symbol}|${day}|${headlineKey(headline)}`)
+    .digest('hex')
+    .slice(0, 32)
+}
+
+/**
+ * Collapse syndicated copies and rank what remains.
+ *
+ * The ranking rule is the whole design: **a story carried by four outlets
+ * outranks one outlet posting it forty times.** Ranking by article count would
+ * promote whichever wire service is most prolific, which is a fact about
+ * publishing, not about the company.
+ */
+export function rankNews(
+  symbol: string,
+  articles: RawNews[],
+  limit = MAX_PER_SYMBOL,
+): RankedNews[] {
+  const groups = new Map<
+    string,
+    { article: RawNews; outlets: Set<string>; fingerprint: string }
+  >()
+
+  for (const a of articles) {
+    const day = a.publishedAt.slice(0, 10)
+    const fingerprint = newsFingerprint(symbol, a.headline, day)
+
+    const existing = groups.get(fingerprint)
+    if (existing) {
+      existing.outlets.add(a.source)
+      // Keep the earliest telling: the first outlet to carry a story is more
+      // informative than the twentieth to repeat it.
+      if (a.publishedAt < existing.article.publishedAt) existing.article = a
+    } else {
+      groups.set(fingerprint, {
+        article: a,
+        outlets: new Set([a.source]),
+        fingerprint,
+      })
+    }
+  }
+
+  return [...groups.values()]
+    .map((g) => ({
+      ...g.article,
+      corroboration: g.outlets.size,
+      fingerprint: g.fingerprint,
+    }))
+    .sort(
+      (a, b) =>
+        b.corroboration - a.corroboration ||
+        b.publishedAt.localeCompare(a.publishedAt),
+    )
+    .slice(0, limit)
+}

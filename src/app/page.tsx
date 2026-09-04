@@ -27,6 +27,11 @@ export default async function Page() {
     <main className="mx-auto w-full max-w-3xl px-5 py-10">
       <Header sitrep={sitrep} />
 
+      <StalenessWarning
+        sessionsBehind={sitrep.dataQuality.sessionsBehind}
+        holes={sitrep.dataQuality.holes}
+      />
+
       {sitrep.watchlistSize === 0 ? (
         <EmptyWatchlist />
       ) : sitrep.quiet ? (
@@ -142,6 +147,50 @@ function Header({
         </>
       )}
     </header>
+  )
+}
+
+/**
+ * Say so when the data is behind.
+ *
+ * The single most dangerous failure this product has is silence: missing data
+ * renders as a calm market, and a calm market is a real answer here. Once
+ * ingestion runs unattended, an outage would otherwise look exactly like
+ * nothing happening.
+ *
+ * Measured in trading sessions, so a weekend never triggers it — a warning
+ * that cries wolf every Saturday is one users learn to ignore by Tuesday.
+ */
+function StalenessWarning({
+  sessionsBehind,
+  holes,
+}: {
+  sessionsBehind: number
+  holes: number
+}) {
+  if (sessionsBehind === 0 && holes === 0) return null
+
+  return (
+    <div
+      className="mt-4 rounded-md border px-3 py-2 text-sm"
+      style={{ borderColor: 'var(--accent)', color: 'var(--accent-ink)' }}
+      role="status"
+    >
+      <span className="font-mono text-[10px] tracking-wider">DATA IS BEHIND</span>{' '}
+      {sessionsBehind > 0 && (
+        <>
+          The newest prices are {sessionsBehind} trading session
+          {sessionsBehind === 1 ? '' : 's'} old.{' '}
+        </>
+      )}
+      {holes > 0 && (
+        <>
+          {holes} session{holes === 1 ? ' is' : 's are'} missing from the recent
+          history.{' '}
+        </>
+      )}
+      Treat this brief as incomplete rather than as a quiet market.
+    </div>
   )
 }
 

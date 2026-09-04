@@ -153,6 +153,9 @@ model Instrument {
   conflicts      BarConflict[]
   earnings       EarningsEvent[]
 
+  intradayBars IntradayBar[]
+  news         NewsItem[]
+
   @@index([sector])
   @@map("instruments")
 }
@@ -191,6 +194,16 @@ model BarConflict {
   valueB       Decimal  @db.Decimal(18, 6)
   deltaPct     Float
   resolvedTo   String
+  /// Value actually stored. Usually one of valueA/valueB, recorded explicitly
+  /// so the decision does not have to be re-derived from the trust ranking.
+  resolvedValue Decimal? @db.Decimal(18, 6)
+  /// Why. e.g. HIGHER_TRUST_SOURCE, PRIMARY_VALUE_FAILED_HISTORY_SANITY.
+  /// A resolution that cannot be audited is indistinguishable from a guess.
+  reason        String   @default("HIGHER_TRUST_SOURCE")
+  /// True when sanity beat trust - the higher-ranked provider was overruled.
+  trustOverride Boolean  @default(false)
+  /// Which resolution algorithm decided, so old rows stay interpretable.
+  algorithmV    String   @default("RECONCILIATION_V1")
   detectedAt   DateTime @default(now())
 
   instrument Instrument @relation(fields: [instrumentId], references: [id], onDelete: Cascade)
@@ -237,6 +250,94 @@ model DetectorScorecard {
   computedAt   DateTime @default(now())
 
   @@map("detector_scorecards")
+}
+
+/// 15-minute bars, recent window only.
+///
+/// NOT an analytical input. No detector reads this table; every statistic in
+/// the engine is defined on daily bars and stays that way. This exists to
+/// answer one question the daily series cannot: WHEN in the session did it
+/// happen. "NVDA fell 8% on Tuesday" is a table; "fell 8% Tuesday morning" is
+/// a briefing.
+///
+/// Retained 30 days. Free-tier 15-minute history reaches back about nine
+/// months, so historical replay stays daily by design rather than by accident.
+model IntradayBar {
+  instrumentId String
+  /// Bar open time, UTC.
+  at           DateTime
+  open         Float
+  high         Float
+  low          Float
+  close        Float
+  volume       BigInt
+  source       String
+
+  instrument Instrument @relation(fields: [instrumentId], references: [id], onDelete: Cascade)
+
+  @@id([instrumentId, at])
+  @@index([at])
+  @@map("intraday_bars")
+}
+
+/// A headline, attached to an event the price engine already found.
+///
+/// News never creates an event and never moves a score. The free tier returns
+/// roughly 250 articles before a given date - about two days for a liquid name
+/// - drawn from a handful of syndicating outlets, so article COUNT measures
+/// press-release cadence, not importance. `corroboration` counts distinct
+/// outlets carrying a near-identical headline, which is the only signal of
+/// significance this data honestly supports.
+model NewsItem {
+  id            String   @id @default(uuid())
+  instrumentId  String
+  publishedAt   DateTime
+  headline      String
+  source        String
+  url           String
+  summary       String?
+  corroboration Int      @default(1)
+  /// Hash of the normalised headline, so syndicated copies collapse to one row.
+  fingerprint   String   @unique
+  createdAt     DateTime @default(now())
+
+  instrument Instrument @relation(fields: [instrumentId], references: [id], onDelete: Cascade)
+
+  @@index([instrumentId, publishedAt(sort: Desc)])
+  @@map("news_items")
+}
+
+/// Curated historical context.
+///
+/// The engine can detect a crash. It cannot know COVID was happening, because
+/// historical news is unavailable at any price this project can pay. This is a
+/// hand-assembled table of what was going on, so replay can say what a market
+/// event COINCIDED with - never what caused it.
+///
+/// Curated is the honest word, and it is the one used in the README.
+model HistoricalContextEvent {
+  id           String    @id @default(uuid())
+  eventDate    DateTime  @db.Date
+  eventEndDate DateTime? @db.Date
+  title        String
+  description  String
+  /// MONETARY_POLICY | MACROECONOMIC | GEOPOLITICAL | FINANCIAL_CRISIS |
+  /// PUBLIC_HEALTH | CORPORATE | MARKET_STRUCTURE
+  category     String
+  /// GLOBAL | US | REGIONAL | SECTOR | COMPANY
+  scope        String
+  /// HIGH | MEDIUM | LOW
+  importance   String
+  /// Where this claim comes from. An unsourced row is a rumour.
+  source       String
+  sourceUrl    String?
+  /// Sectors this bears on, empty when it is market-wide.
+  sectors      String[]
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([eventDate])
+  @@map("historical_context_events")
 }
 
 // ---------------------------------------------------------------- intelligence
