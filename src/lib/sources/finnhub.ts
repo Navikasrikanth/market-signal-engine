@@ -148,6 +148,44 @@ export function newsFingerprint(symbol: string, headline: string, day: string): 
 }
 
 /**
+ * Is this article actually about the company?
+ *
+ * It has to be asked, because the provider's tagging is extremely loose. Of
+ * 255 articles pulled across the universe on a live run, **51 mentioned the
+ * company they were filed under**. The rest were aggregator listicles —
+ * "Weekly Wrap: Bitcoin's Win Streak Continues" and "Vertex vs. Regeneron:
+ * Which Biotech Giant Is the Better Buy" both arrived tagged NVDA.
+ *
+ * Putting those under a card that explains an NVDA volume spike would assert a
+ * relationship that does not exist. Unrelated context presented as context is
+ * worse than no context, so the bar is simply: the headline has to name the
+ * company or its ticker.
+ *
+ * The ticker is matched on a word boundary. Without it "MU" matches "MUCH",
+ * "AMD" matches "AMDOCS", and the filter quietly stops filtering.
+ */
+export function mentionsCompany(
+  headline: string,
+  symbol: string,
+  companyName: string,
+): boolean {
+  if (new RegExp(`\\b${symbol}\\b`, 'i').test(headline)) return true
+
+  if (!companyName) return false
+
+  // First meaningful word of the registered name: "NVIDIA Corporation" ->
+  // "nvidia", "Advanced Micro Devices" -> "advanced". Legal suffixes and
+  // single letters carry no signal.
+  const word = companyName
+    .split(/\s+/)
+    .map((w) => w.replace(/[^A-Za-z]/g, ''))
+    .find((w) => w.length > 3)
+
+  if (!word) return false
+  return new RegExp(`\\b${word}\\b`, 'i').test(headline)
+}
+
+/**
  * Collapse syndicated copies and rank what remains.
  *
  * The ranking rule is the whole design: **a story carried by four outlets
@@ -157,6 +195,12 @@ export function newsFingerprint(symbol: string, headline: string, day: string): 
  */
 export function rankNews(
   symbol: string,
+  /**
+   * Required, not optional. As an optional trailing argument it silently
+   * weakened the relevance filter for any caller that forgot it — the same
+   * footgun as a flag that is documented and unread.
+   */
+  companyName: string,
   articles: RawNews[],
   limit = MAX_PER_SYMBOL,
 ): RankedNews[] {
@@ -166,6 +210,9 @@ export function rankNews(
   >()
 
   for (const a of articles) {
+    // Four fifths of what the provider returns is not about this company.
+    if (!mentionsCompany(a.headline, symbol, companyName)) continue
+
     const day = a.publishedAt.slice(0, 10)
     const fingerprint = newsFingerprint(symbol, a.headline, day)
 

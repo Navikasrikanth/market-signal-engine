@@ -23,10 +23,12 @@ export const INTRADAY_RETENTION_DAYS = 30
 const DEAD_LETTER_RETENTION_DAYS = 90
 const LOGIN_AUDIT_RETENTION_DAYS = 90
 
-async function activeSymbols(): Promise<Array<{ id: string; symbol: string }>> {
+async function activeSymbols(): Promise<
+  Array<{ id: string; symbol: string; name: string }>
+> {
   return db.instrument.findMany({
     where: { isActive: true },
-    select: { id: true, symbol: true },
+    select: { id: true, symbol: true, name: true },
     orderBy: { symbol: 'asc' },
   })
 }
@@ -106,7 +108,7 @@ async function ingestNews(): Promise<object> {
   for (const inst of instruments) {
     try {
       const articles = await source.fetchNews(inst.symbol, from, to)
-      const ranked = rankNews(inst.symbol, articles)
+      const ranked = rankNews(inst.symbol, inst.name, articles)
       if (ranked.length === 0) continue
 
       const result = await db.newsItem.createMany({

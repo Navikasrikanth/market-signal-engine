@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { currentUser } from '@/lib/auth'
 import { db } from '@/lib/db'
+import { cached, TTL } from '@/lib/cache'
 import {
   FOLLOW_HORIZON,
   FOLLOW_SIGMA,
@@ -26,7 +27,9 @@ export default async function PerformancePage() {
   const user = await currentUser()
   if (!user) redirect('/login')
 
-  const rows = await db.detectorScorecard.findMany()
+  const rows = await cached('scorecard', 'all', TTL.scorecard, () =>
+    db.detectorScorecard.findMany(),
+  )
 
   const scored = rows
     .map((r) => {

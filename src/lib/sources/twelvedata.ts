@@ -6,6 +6,7 @@ import type {
   RawIntradayBar,
 } from './types'
 import { SourceDataError } from './types'
+import { twelveDataBucket } from './rate-limit'
 
 /**
  * Twelve Data — primary bar source.
@@ -41,6 +42,10 @@ export class TwelveDataSource implements BarSource, IntradaySource {
     if (opts.from) url.searchParams.set('start_date', opts.from)
     if (opts.to) url.searchParams.set('end_date', opts.to)
 
+    // Wait for a token rather than earn a 429. A rejected request costs both
+    // the call and the data; a pause costs only time, and every caller here
+    // runs on a schedule with minutes of headroom.
+    await twelveDataBucket.take()
     const res = await fetch(url)
     if (!res.ok) {
       throw new SourceDataError(this.id, symbol, `HTTP ${res.status}`)
@@ -75,6 +80,10 @@ export class TwelveDataSource implements BarSource, IntradaySource {
     url.searchParams.set('order', 'ASC')
     url.searchParams.set('apikey', this.apiKey)
 
+    // Wait for a token rather than earn a 429. A rejected request costs both
+    // the call and the data; a pause costs only time, and every caller here
+    // runs on a schedule with minutes of headroom.
+    await twelveDataBucket.take()
     const res = await fetch(url)
     if (!res.ok) {
       throw new SourceDataError(this.id, symbol, `HTTP ${res.status}`)

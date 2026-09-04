@@ -70,6 +70,19 @@ export function WhyPanel({
             ))}
           </ul>
 
+          {/*
+            Stated, not implied. Headlines appear on the card above, and the
+            one thing a reader must not conclude is that they contributed to
+            the number - because unstructured text is not something this engine
+            scores, and pretending otherwise would undo the whole argument that
+            every point here traces to a calculation.
+          */}
+          <p className="mt-3 text-[11px] leading-relaxed text-[color:var(--ink-3)]">
+            News is shown for context only. No headline contributes to this
+            score; every point above comes from price, volume and volatility
+            arithmetic.
+          </p>
+
           {suppressors.length > 0 && (
             <>
               <p className="mt-4 mb-2 font-mono text-[10px] tracking-wider text-[color:var(--ink-3)]">

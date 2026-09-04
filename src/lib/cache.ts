@@ -33,17 +33,22 @@ const TIMEOUT_MS = 250
  * by invalidation, not by picking a smaller number here.
  */
 export const TTL = {
-  /** A user's assembled brief. Dropped explicitly on mark-seen and snooze. */
+  /**
+   * A user's assembled brief. Dropped explicitly on mark-seen, snooze, a
+   * watchlist edit, and sign-in — every change the user can themselves cause.
+   */
   sitrep: 15 * 60,
   /** Per-instrument window statistics — the real O(watchlist) cost. */
   windowStats: 60 * 60,
-  /** Detector scorecard. Changes only when compute runs. */
+  /** Detector scorecard, on /performance. Changes only when compute runs. */
   scorecard: 60 * 60,
-  /** Market context for the brief header. */
-  marketContext: 15 * 60,
-  /** Latest intraday observation. Not a live price; see the README. */
-  intraday: 5 * 60,
 } as const
+
+// Entries for market context and the latest intraday observation were removed
+// rather than left declared and unused. Both are assembled inside the brief,
+// so caching them separately would have been a second copy of the same data
+// with its own expiry - and a declared-but-unread constant is the same class
+// of quiet lie as a documented-but-unimplemented flag.
 
 let client: Redis | null = null
 let disabled = process.env.CACHE_DISABLED === '1'

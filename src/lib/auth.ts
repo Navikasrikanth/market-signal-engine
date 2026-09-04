@@ -3,6 +3,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import bcrypt from 'bcryptjs'
 import { db } from './db'
 import { passwordProblem } from './password'
+import { invalidateUser } from './cache'
 
 export { passwordProblem, safeEqual } from './password'
 
@@ -110,6 +111,11 @@ export async function createSession(userId: string): Promise<string> {
   await db.session.create({
     data: { userId, tokenHash: hashToken(token), expiresAt, ip, userAgent },
   })
+
+  // A new sign-in changes the brief's opening line - "you last signed in on
+  // ..." now refers to a different visit - so the cached copy is no longer an
+  // answer to the same question.
+  await invalidateUser(userId)
 
   const jar = await cookies()
   jar.set(COOKIE, token, {

@@ -144,6 +144,8 @@ export function EventCard({
         </span>
       </div>
 
+      <Coverage items={item.coverage} />
+
       <WhyPanel
         score={item.attentionScore}
         positives={item.positives}
@@ -175,5 +177,49 @@ export function EventCard({
         </button>
       </div>
     </article>
+  )
+}
+
+/**
+ * What was published around the same time.
+ *
+ * Corroboration, never a signal. These headlines did not create the event and
+ * did not move the score by a single point — the price engine found this on
+ * its own, and the news is here so a reader does not have to go and look it up
+ * elsewhere.
+ *
+ * Ranked by how many distinct outlets carried the story, because the provider
+ * returns hundreds of syndicated copies from a handful of sources: counting
+ * articles would measure publishing cadence and present it as importance.
+ *
+ * Absent is the normal state, and silence here means nothing: a name with no
+ * coverage is not less important, only less written about.
+ */
+function Coverage({ items }: { items: SitrepItem['coverage'] }) {
+  if (items.length === 0) return null
+
+  return (
+    <div className="mt-3 border-t border-[color:var(--border)] pt-2">
+      <p className="font-mono text-[10px] tracking-wider text-[color:var(--ink-3)]">
+        REPORTED THAT DAY · did not affect the score
+      </p>
+      <ul className="mt-1 flex flex-col gap-1">
+        {items.map((c) => (
+          <li key={c.url} className="text-xs leading-snug">
+            <a
+              href={c.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[color:var(--ink-2)] underline decoration-dotted underline-offset-2 hover:text-[color:var(--accent-ink)]"
+            >
+              {c.headline}
+            </a>{' '}
+            <span className="text-[color:var(--ink-3)]">
+              {c.outlets > 1 ? `· ${c.outlets} outlets` : `· ${c.source}`}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }

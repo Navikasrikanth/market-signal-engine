@@ -59,6 +59,17 @@ export interface SitrepItem {
   positives: Contribution[]
   suppressors: Contribution[]
   eventIds: string[]
+  /**
+   * Headlines published around the same time. Corroboration, never a signal:
+   * these did not create the event and did not affect the score.
+   */
+  coverage: Array<{
+    headline: string
+    source: string
+    url: string
+    outlets: number
+    publishedAt: string
+  }>
   /** Net move over the absence window, not just the last session. */
   windowReturnPct: number | null
   sigmas: number | null
@@ -143,7 +154,25 @@ interface WatchRow {
   intent: Intent
 }
 
+/**
+ * The brief, cached.
+ *
+ * Assembling it is the expensive read - a cursor query, per-instrument window
+ * statistics, themes, chronology - and it is also the one thing every page
+ * load needs. Caching it is what makes `invalidateUser` mean something: until
+ * now that function deleted a key nothing ever wrote, so the invalidation was
+ * correct only because there was nothing to invalidate.
+ *
+ * Safe because both directions are covered. A recompute retires every entry
+ * through the generation counter; anything the USER does that changes their
+ * own answer - mark seen, snooze, a watchlist edit, signing in - drops their
+ * key explicitly. TTL is only there so superseded generations do not linger.
+ */
 export async function buildSitrep(userId: string): Promise<SitrepResult> {
+  return cached('sitrep', userId, TTL.sitrep, () => assembleSitrep(userId))
+}
+
+async function assembleSitrep(userId: string): Promise<SitrepResult> {
   const user = await db.user.findUniqueOrThrow({
     where: { id: userId },
     select: { displayName: true, settings: true },
@@ -365,6 +394,7 @@ export async function buildSitrep(userId: string): Promise<SitrepResult> {
       intent: row.intent,
       themeKey: instrumentEvents.find((e) => e.theme)?.theme?.scopeKey ?? null,
       sparkline: window.sparkline,
+      coverage: [],
       isUpdate: false,
     })
   }
@@ -468,6 +498,22 @@ export async function buildSitrep(userId: string): Promise<SitrepResult> {
 
   // The absence, as a sequence rather than a ranking. Answers the question a
   // returning user actually asks first.
+  // Headlines for the surfaced names, in ONE query rather than per card.
+  //
+  // Attached to what the price engine already found. Nothing here creates an
+  // event or moves a score - `WhyPanel` says so in words - because ranking
+  // unstructured text without a model would mean counting articles, and 249
+  // articles for one ticker over two days came from five outlets. That
+  // measures syndication, not importance.
+  const shownIds = rows
+    .filter((r) => shown.some((i) => i.symbol === r.symbol))
+    .map((r) => r.instrumentId)
+  const coverageByInstrument = await loadCoverage(shownIds, since)
+  for (const item of shown) {
+    const row = rows.find((r) => r.symbol === item.symbol)
+    item.coverage = row ? (coverageByInstrument.get(row.instrumentId) ?? []) : []
+  }
+
   const chronology = await buildChronology(instrumentIds, since)
   const cameAndWent = await findCameAndWent(
     instrumentIds,
@@ -741,6 +787,46 @@ export async function markSeen(
  * reports every Saturday as an outage, which trains a user to ignore the
  * warning exactly when it starts being true.
  */
+/**
+ * Headlines around the surfaced events.
+ *
+ * Ranked by how many distinct outlets carried the story, never by article
+ * count - the ordering is the whole design, because a wire service posting
+ * forty times is a fact about publishing, not about the company.
+ */
+async function loadCoverage(
+  instrumentIds: string[],
+  since: Date | null,
+): Promise<Map<string, SitrepItem['coverage']>> {
+  const out = new Map<string, SitrepItem['coverage']>()
+  if (instrumentIds.length === 0) return out
+
+  const rows = await db.newsItem.findMany({
+    where: {
+      instrumentId: { in: instrumentIds },
+      ...(since ? { publishedAt: { gt: since } } : {}),
+    },
+    orderBy: [{ corroboration: 'desc' }, { publishedAt: 'desc' }],
+    take: instrumentIds.length * 3,
+  })
+
+  for (const r of rows) {
+    const list = out.get(r.instrumentId) ?? []
+    // Two headlines per name. This is context on a card, not a news reader.
+    if (list.length >= 2) continue
+    list.push({
+      headline: r.headline,
+      source: r.source,
+      url: r.url,
+      outlets: r.corroboration,
+      publishedAt: r.publishedAt.toISOString().slice(0, 10),
+    })
+    out.set(r.instrumentId, list)
+  }
+
+  return out
+}
+
 async function checkFreshness(
   instrumentIds: string[],
 ): Promise<{ sessionsBehind: number; holes: number }> {
