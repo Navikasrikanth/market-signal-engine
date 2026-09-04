@@ -122,25 +122,51 @@ test('the watchlist can be managed', async ({ page }) => {
   expect(before).toBeGreaterThan(0)
 
   // Priority is a real control, not decoration: it multiplies the score.
-  const firstRow = rows.first()
-  const symbol = (await firstRow.locator('span').first().innerText()).trim()
+  const symbol = (await rows.first().locator('span').first().innerText()).trim()
 
   // Match the ticker exactly. `hasText` is a case-insensitive SUBSTRING match,
   // so filtering on "MU" also selected every name in Communication Services -
   // which only showed up once the seed order changed and MU landed first.
   const row = rows.filter({ has: page.getByText(symbol, { exact: true }) })
 
-  await firstRow.locator('select').first().selectOption('HIGH')
-  await page.reload()
+  // Wait for the write rather than racing it. selectOption returns as soon as
+  // the change event fires, so reloading immediately could read the row back
+  // before the PATCH had landed - and the test would then blame the UI for a
+  // value the server had simply not been told about yet.
+  await Promise.all([
+    page.waitForResponse(
+      (r) => r.url().includes('/api/watchlist/items') && r.ok(),
+    ),
+    row.locator('select').first().selectOption('HIGH'),
+  ])
 
+  await page.reload()
   await expect(row.locator('select').first()).toHaveValue('HIGH')
 
   // Remove it, confirm the list shrank, then add it back.
-  await row.getByRole('button', { name: 'Remove' }).click()
+  await Promise.all([
+    page.waitForResponse(
+      (r) => r.url().includes('/api/watchlist/items') && r.ok(),
+    ),
+    row.getByRole('button', { name: 'Remove' }).click(),
+  ])
   await expect(rows).toHaveCount(before - 1)
 
-  await page.getByRole('button', { name: `+ ${symbol}` }).click()
+  await Promise.all([
+    page.waitForResponse(
+      (r) => r.url().includes('/api/watchlist/items') && r.ok(),
+    ),
+    page.getByRole('button', { name: `+ ${symbol}` }).click(),
+  ])
   await expect(rows).toHaveCount(before)
+
+  // Leave the demo state as it was found.
+  await Promise.all([
+    page.waitForResponse(
+      (r) => r.url().includes('/api/watchlist/items') && r.ok(),
+    ),
+    row.locator('select').first().selectOption('NORMAL'),
+  ])
 })
 
 test('replay shows a theme forming, and refuses to invent one', async ({
@@ -168,6 +194,32 @@ test('replay shows a theme forming, and refuses to invent one', async ({
     await skip.click()
     await expect(page.getByText(/THEME DETECTED/)).toHaveCount(0)
   }
+})
+
+test('the track record is published, with its sample sizes', async ({
+  page,
+}) => {
+  await signIn(page)
+  await page.getByRole('link', { name: 'track record' }).click()
+
+  await expect(
+    page.getByRole('heading', { name: 'Does this thing actually work?' }),
+  ).toBeVisible()
+
+  // A rate is meaningless without its sample size, so both must be on screen.
+  await expect(page.getByText(/%\s*n=/).first()).toBeVisible()
+
+  // And without its baseline: the page must state what "look every day" scores.
+  await expect(page.getByText(/BASELINE/).first()).toBeVisible()
+
+  // The claim the page exists to make - it says what it is not.
+  await expect(page.getByText(/proxy, not ground truth/)).toBeVisible()
+
+  // The same figures reach the card, next to the reason they qualify.
+  await page.goto('/')
+  const first = page.locator('article').first()
+  await first.getByRole('button', { name: 'Why am I seeing this?' }).click()
+  await expect(first.getByText(/preceded a real move .*% of the time/).first()).toBeVisible()
 })
 
 test('the pipeline page reports data quality and queue state', async ({

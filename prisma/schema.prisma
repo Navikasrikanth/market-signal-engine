@@ -188,6 +188,29 @@ model EarningsEvent {
   @@map("earnings_events")
 }
 
+/// Does this detector actually work?
+///
+/// One row per detector, refreshed by every compute. `followed` counts the
+/// events that preceded a >=1.5 sigma move within 3 sessions; `base*` is the
+/// same measurement taken over EVERY day, because a rate without its baseline
+/// is not a claim - a detector that fires constantly can score well while
+/// saying nothing.
+model DetectorScorecard {
+  detector     String   @id
+  engineV      String
+  windowStart  DateTime @db.Date
+  windowEnd    DateTime @db.Date
+  fired        Int
+  surfaced     Int
+  checked      Int
+  followed     Int
+  baseChecked  Int
+  baseFollowed Int
+  computedAt   DateTime @default(now())
+
+  @@map("detector_scorecards")
+}
+
 // ---------------------------------------------------------------- intelligence
 
 enum Severity {

@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 import type { SitrepItem } from '@/lib/sitrep'
+import type { TrackRecord } from '@/engine/followthrough'
 import { WhyPanel } from './WhyPanel'
 import {
   AttentionScore,
@@ -20,7 +21,13 @@ import {
  * what their names are worth; what they do not know is what happened while
  * they were gone.
  */
-export function EventCard({ item }: { item: SitrepItem }) {
+export function EventCard({
+  item,
+  trackRecord,
+}: {
+  item: SitrepItem
+  trackRecord?: Record<string, TrackRecord>
+}) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [dismissed, setDismissed] = useState(false)
@@ -141,6 +148,7 @@ export function EventCard({ item }: { item: SitrepItem }) {
         score={item.attentionScore}
         positives={item.positives}
         suppressors={item.suppressors}
+        trackRecord={trackRecord}
       />
 
       <div className="mt-3 flex gap-2">

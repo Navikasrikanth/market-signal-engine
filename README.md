@@ -30,7 +30,7 @@ Open http://localhost:3000 and sign in as `demo@sitrep.local` / `sitrep-demo`.
 | `/admin/pipeline` | Ingest runs, data quality, engine version |
 
 ```bash
-npm test              # 133 unit tests, engine + ingestion
+npm test              # 144 unit tests, engine + ingestion
 npm run test:e2e      # 4 Playwright journeys through a real browser
 npm run calibrate     # replay history, rewrite docs/calibration.md
 npx tsx scripts/verify-requirements.ts   # 30 checks against the brief's minimums
@@ -76,7 +76,19 @@ SITREP inverts each of those.
 bars → features → detectors → scoring → themes → narrative → SITREP
 ```
 
-**Six detectors.** Move since you last looked (the only user-relative one), volume spike, sector divergence, range break, volatility regime shift, upcoming earnings. Together they cover every signal family the scorer weights; more detectors would add coverage, not structure.
+**Eight detectors.** Move since you last looked (the only user-relative one), volume spike, sector divergence, range break, volatility regime shift, upcoming earnings — and two that answer a different question entirely.
+
+### What counts as meaningful change?
+
+The brief leaves that to the candidate, and six of the eight detectors give the obvious answer: *the price did something unusual.* The last two don't.
+
+**`correlation_break`** — has this name stopped behaving like its peers? A stock that tracked its sector at 0.85 for six months and now tracks it at 0.15 has changed in a way no price move describes. The move may be small, or absent, while the thing the position actually depended on has gone. Two gates: the relationship must have existed (0.6 baseline) before it can break, and the fall must be large (0.45).
+
+**`quiet_regime`** — the only detector that fires on the *absence* of movement. A name compressed into the quietest 5% of its own trailing year is not "nothing happening": low realised volatility is the precondition for expansion. Two gates again, and the second is what makes it news — the name must have *gone* quiet, not merely be quiet. A permanently sleepy stock would otherwise republish the same non-event every session.
+
+Both are **directionless** (`direction: 0`). Decoupling and stillness are claims about structure, not about which way something went, so neither can be counted as evidence that a sector is under selling pressure — `detectThemes` excludes them, and a test pins that.
+
+They are also, as it happens, the two best-performing detectors in the engine (1.53× and 1.70× over baseline — see below). That was not the argument for building them, but it is the argument for keeping them.
 
 **The score is a transparent linear model.** Every point traces to a named signal:
 
@@ -124,6 +136,39 @@ The target is derived from brief size, not picked: for 17 names checked twice we
 3. The metric itself was wrong. Coverage is only meaningful at the instrument-**day** level, which is also what the brief ranks. And the original 2–4/month target was unreachable: detectors only fire on 2.35 days/name/month, so it implied showing everything.
 
 Follow-through lift went from 1.03× to 1.31×.
+
+---
+
+## Does this thing actually work?
+
+`/performance` publishes the engine's own hit rate, per detector.
+
+```
+detector             fired  surfaced  followed through   baseline   vs baseline
+vol_regime_shift       374        83   7.2%  n=83          15.1%      0.48×  WORSE THAN CHANCE
+move_since_last_seen   517       471  16.3%  n=471         15.2%      1.08×
+sector_divergence      989       709  17.1%  n=709         15.2%      1.13×
+volume_spike           568       560  18.1%  n=559         15.2%      1.19×
+range_break          1,201       399  18.3%  n=399         15.2%      1.21×
+quiet_regime           761       348  23.3%  n=348         15.2%      1.53×
+correlation_break      250        43  25.6%  n=43          15.1%      1.70×
+```
+
+A warning "followed through" when the name moved ≥1.5σ within 3 sessions. Three rules make the page worth having:
+
+- **Sorted worst-first.** A scorecard that leads with its best number is marketing.
+- **Sample size beside every rate.** A 100% hit rate on n=3 is not a hit rate; below n=30 nothing is shown at all.
+- **The baseline is the same test applied to every trading day.** Without it a rate means nothing — a detector that fires constantly scores well while saying nothing.
+
+`vol_regime_shift` currently does *worse than looking every day*. It stays on the page. That it is still there is the clearest evidence the measurement isn't being tuned to flatter the engine; the honest options are to raise its threshold or delete it, not to stop measuring.
+
+The same figures appear inline in the Why panel, next to the reason they qualify: *"outperforming its sector by +7.6% (3.4σ) — preceded a real move 17% of the time (n=709), 1.13× baseline."*
+
+**This is a proxy, not ground truth.** Nobody labelled these events, and "did the user care?" is unmeasurable before the product has users. It tests one thing: whether an alert carried information about the near future rather than restating noise that had already passed. `earnings_upcoming` is absent because the free data tier serves forward-looking dates only.
+
+**Deliberately not fed back into the scorer.** Tuning weights on the metric used to judge them would make the calibration unfalsifiable.
+
+`followThroughRate` lives in `src/engine/followthrough.ts` — pure, and shared by the calibration report and the scorecard, so the two can never disagree about what "right" means.
 
 ---
 
@@ -236,7 +281,7 @@ Replay is only honest if the engine at date *T* sees exactly what it would have 
 
 ## Testing
 
-133 unit tests, 5 browser journeys, and 30 scored checks against the brief's three minimums.
+144 unit tests, 6 browser journeys, and 30 scored checks against the brief's three minimums.
 
 Every detector has a **firing fixture and a must-not-fire fixture** — a detector that only ever fires is indistinguishable from a broken one, and on a product whose promise is filtering noise, false positives are the expensive failure.
 
@@ -250,7 +295,7 @@ Several tests exist specifically to pin down bugs that were written and then cau
 - a 2:1 split deliberately passes the validator — documented as a limitation rather than faked
 
 The browser suite is deliberately thin: four journeys covering the three
-minimums plus replay. Broad UI coverage of a product whose logic already has 133
+minimums plus replay. Broad UI coverage of a product whose logic already has 144
 unit tests would be slow to run, slower to maintain, and would mostly re-test
 React. It did earn its place immediately though — it caught the acknowledge
 button hiding a card optimistically without ever re-reading the brief, so the

@@ -1,6 +1,8 @@
 import { db } from './db'
 import { runPipeline, toEngineBars, type InstrumentDay, type PipelineEvent } from './pipeline'
 import { detectThemes, type ThemeMember } from '@/engine/theme'
+import { followThroughRate } from '@/engine/followthrough'
+import { ENGINE_VERSION } from '@/engine/types'
 import type { Bar, Severity } from '@/engine/types'
 import { MARKET_BENCHMARK } from './universe'
 
@@ -99,6 +101,7 @@ export async function computeAndPersist(options: ComputeOptions = {}) {
   }
 
   const allDays: Array<{ instrument: LoadedInstrument; day: InstrumentDay }> = []
+  const scorecard = new Map<string, ScorecardStat>()
   let persisted = 0
 
   for (const inst of loaded.values()) {
@@ -118,6 +121,38 @@ export async function computeAndPersist(options: ComputeOptions = {}) {
       { from, to, sessionsSinceLastSeen: 1 },
     )
 
+    // Per-detector track record, accumulated as we go. Measured on the SAME
+    // pipeline output that produced the events, so the scorecard can never
+    // describe a different engine than the one that ran.
+    const surfacedByDetector = new Map<string, PipelineEvent[]>()
+    for (const day of days) {
+      for (const e of day.events) {
+        const stat = scorecard.get(e.detector) ?? blankScorecard()
+        stat.fired++
+        if (SURFACED.includes(day.severity)) {
+          stat.surfaced++
+          const list = surfacedByDetector.get(e.detector) ?? []
+          list.push(e)
+          surfacedByDetector.set(e.detector, list)
+        }
+        scorecard.set(e.detector, stat)
+      }
+    }
+
+    // The baseline: the same follow-through test applied to every trading day
+    // this instrument had, warning or not. Without it a hit rate means nothing.
+    const everyDay = inst.bars.map((b) => ({ marketTime: b.date }))
+    const base = followThroughRate(everyDay, inst.bars)
+
+    for (const [detector, events] of surfacedByDetector) {
+      const stat = scorecard.get(detector)!
+      const r = followThroughRate(events, inst.bars)
+      stat.checked += r.checked
+      stat.followed += r.followed
+      stat.baseChecked += base.checked
+      stat.baseFollowed += base.followed
+    }
+
     for (const day of days) {
       allDays.push({ instrument: inst, day })
       if (!PERSISTED_DAYS.includes(day.severity)) continue
@@ -135,8 +170,64 @@ export async function computeAndPersist(options: ComputeOptions = {}) {
   }
 
   const themeCount = await persistThemes(allDays, loaded, benchmark)
+  await persistScorecard(scorecard, loaded)
 
   return { events: persisted, themes: themeCount, activeDays: allDays.length }
+}
+
+interface ScorecardStat {
+  fired: number
+  surfaced: number
+  checked: number
+  followed: number
+  baseChecked: number
+  baseFollowed: number
+}
+
+function blankScorecard(): ScorecardStat {
+  return {
+    fired: 0,
+    surfaced: 0,
+    checked: 0,
+    followed: 0,
+    baseChecked: 0,
+    baseFollowed: 0,
+  }
+}
+
+/**
+ * Replace the scorecard wholesale rather than accumulating across runs.
+ *
+ * A track record has to describe the engine that is actually running. Merging
+ * v1 numbers into a v2 row would produce a figure that was true of neither.
+ */
+async function persistScorecard(
+  scorecard: Map<string, ScorecardStat>,
+  loaded: Map<string, LoadedInstrument>,
+): Promise<void> {
+  if (scorecard.size === 0) return
+
+  const dates: string[] = []
+  for (const inst of loaded.values()) {
+    if (inst.bars.length === 0) continue
+    dates.push(inst.bars[0].date, inst.bars[inst.bars.length - 1].date)
+  }
+  if (dates.length === 0) return
+  dates.sort()
+
+  const windowStart = new Date(`${dates[0]}T00:00:00Z`)
+  const windowEnd = new Date(`${dates[dates.length - 1]}T00:00:00Z`)
+
+  await db.detectorScorecard.deleteMany({})
+  await db.detectorScorecard.createMany({
+    data: [...scorecard.entries()].map(([detector, s]) => ({
+      detector,
+      engineV: ENGINE_VERSION,
+      windowStart,
+      windowEnd,
+      ...s,
+    })),
+  })
 }
 
 function eventRow(instrumentId: string, e: PipelineEvent) {

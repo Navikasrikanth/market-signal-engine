@@ -187,6 +187,29 @@ describe('detectThemes', () => {
     expect(t.characteristics.length).toBeGreaterThan(0)
   })
 
+  it('excludes directionless members from a theme', () => {
+    // correlation_break and quiet_regime emit direction 0 on purpose: a name
+    // decoupling from its peers, or going still, is a claim about structure,
+    // not about which way it went. Such an event must never be counted as
+    // evidence that a sector is under selling pressure or showing strength.
+    const four = members(['NVDA', 'AMD', 'AVGO', 'MU'], {
+      ret: -0.062,
+      marketExplained: -0.004,
+      residuals: correlatedResiduals(4),
+    })
+    const structural = { ...four[3], symbol: 'QCOM', direction: 0 as const }
+
+    const themes = detectThemes(
+      [...four.slice(0, 3), structural],
+      '2024-03-08',
+      '2024-03-08',
+    )
+
+    expect(themes).toHaveLength(1)
+    expect(themes[0].members).not.toContain('QCOM')
+    expect(themes[0].memberCount).toBe(3)
+  })
+
   it('does NOT report a sector theme when the whole market is falling', () => {
     // The single most important assertion in theme detection. On a day like
     // 2020-03-16 every sector "moves together"; calling that a semiconductor

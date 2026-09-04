@@ -38,7 +38,11 @@ export default async function Page() {
         <>
           <section className="mt-6 flex flex-col gap-3">
             {sitrep.items.map((item) => (
-              <EventCard key={item.symbol} item={item} />
+              <EventCard
+                key={item.symbol}
+                item={item}
+                trackRecord={sitrep.trackRecord}
+              />
             ))}
           </section>
 
@@ -103,6 +107,12 @@ function Header({
             className="underline decoration-dotted underline-offset-4 hover:text-[color:var(--accent-ink)]"
           >
             manage watchlist
+          </Link>
+          <Link
+            href="/performance"
+            className="underline decoration-dotted underline-offset-4 hover:text-[color:var(--accent-ink)]"
+          >
+            track record
           </Link>
         </span>
       </div>

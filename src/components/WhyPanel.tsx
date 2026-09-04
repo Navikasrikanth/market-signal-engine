@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import type { Contribution } from '@/engine/types'
+import type { TrackRecord } from '@/engine/followthrough'
 
 /**
  * "Why am I seeing this?" and, more importantly, "Why not higher?".
@@ -20,10 +21,13 @@ export function WhyPanel({
   score,
   positives,
   suppressors,
+  trackRecord = {},
 }: {
   score: number
   positives: Contribution[]
   suppressors: Contribution[]
+  /** How often this kind of reason has preceded a real move. Keyed by signal. */
+  trackRecord?: Record<string, TrackRecord>
 }) {
   const [open, setOpen] = useState(false)
 
@@ -51,9 +55,12 @@ export function WhyPanel({
 
           <ul className="flex flex-col gap-1.5">
             {positives.map((c) => (
-              <li key={c.key} className="flex items-center gap-2">
+              <li key={c.key} className="flex items-start gap-2">
                 <span className="text-[color:var(--up)]">✓</span>
-                <span className="flex-1 text-[color:var(--ink-2)]">{c.label}</span>
+                <span className="flex-1 text-[color:var(--ink-2)]">
+                  {c.label}
+                  <Record record={trackRecord[c.key]} />
+                </span>
                 <ContributionBar
                   contribution={c}
                   max={maxAdditive}
@@ -88,6 +95,32 @@ export function WhyPanel({
         </div>
       )}
     </div>
+  )
+}
+
+/**
+ * The reason's own track record, stated next to the reason.
+ *
+ * A score is a claim; this says how often that kind of claim has been followed
+ * by something. Absent below the sample floor rather than shown with a caveat -
+ * a percentage that thirty observations cannot support should not be on screen
+ * at all.
+ */
+function Record({ record }: { record?: TrackRecord }) {
+  if (!record) return null
+
+  const weak = record.lift !== null && record.lift < 1
+
+  return (
+    <span
+      className="mt-0.5 block font-mono text-[10px] tracking-wide"
+      style={{ color: weak ? 'var(--down)' : 'var(--ink-3)' }}
+      title="Share of past alerts of this kind followed by a 1.5-sigma move within 3 sessions"
+    >
+      preceded a real move {(record.rate * 100).toFixed(0)}% of the time (n=
+      {record.n.toLocaleString()})
+      {record.lift !== null && ` · ${record.lift.toFixed(2)}× baseline`}
+    </span>
   )
 }
 

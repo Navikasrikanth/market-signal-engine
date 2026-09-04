@@ -207,7 +207,10 @@ describe('detectQuietRegime', () => {
       days: 300,
       seed: 701,
       dailyVol: 0.02,
-      inject: { kind: 'volRegime', times: 0.15, days: 25 },
+      // Short and deep: the contraction gate compares 10-day vol to 60-day, so
+      // a long quiet tail would drag the 60-day window down with it and the
+      // name would no longer look like it had GONE quiet.
+      inject: { kind: 'volRegime', times: 0.08, days: 12 },
     })
 
     const event = detectQuietRegime(inputFor(bars))

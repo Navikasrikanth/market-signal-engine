@@ -1,6 +1,11 @@
 import { db } from './db'
 import { scoreSignals, explainContributions } from '@/engine/scorer'
 import { buildNarrative, type Narrative } from '@/engine/narrative'
+import {
+  MIN_SCORECARD_SAMPLE,
+  SIGNAL_TO_DETECTOR,
+  type TrackRecord,
+} from '@/engine/followthrough'
 import type { DetectedTheme } from '@/engine/theme'
 import type {
   Contribution,
@@ -71,6 +76,12 @@ export interface SitrepResult {
   withinNormalRange: number
   /** Names the user actively silenced. Never folded into "normal range". */
   snoozedCount: number
+  /**
+   * Per-SIGNAL track record, so a reason can be shown next to how often that
+   * kind of reason has preceded a real move. Keyed by signal key, which is what
+   * contributions carry.
+   */
+  trackRecord: Record<string, TrackRecord>
   /** Flagged by the engine but cut by the attention budget. */
   belowBudget: number
   watchlistSize: number
@@ -381,6 +392,25 @@ export async function buildSitrep(userId: string): Promise<SitrepResult> {
     snoozedCount: snoozedInstruments.size,
   })
 
+  // One query for the whole brief, not one per card. The scorecard is a small
+  // table refreshed by compute; the read path only reads it.
+  const scorecards = await db.detectorScorecard.findMany()
+  const byDetector = new Map(scorecards.map((r) => [r.detector, r]))
+  const trackRecord: Record<string, TrackRecord> = {}
+  for (const [signalKey, detector] of Object.entries(SIGNAL_TO_DETECTOR)) {
+    const row = byDetector.get(detector)
+    // Below the sample floor the honest thing is to say nothing, not to print
+    // a percentage that a handful of observations cannot support.
+    if (!row || row.checked < MIN_SCORECARD_SAMPLE) continue
+    const base = row.baseChecked > 0 ? row.baseFollowed / row.baseChecked : 0
+    const rate = row.followed / row.checked
+    trackRecord[signalKey] = {
+      rate,
+      n: row.checked,
+      lift: base > 0 ? rate / base : null,
+    }
+  }
+
   const latestBar = await db.dailyBar.findFirst({
     where: { instrumentId: { in: instrumentIds } },
     orderBy: { barDate: 'desc' },
@@ -407,6 +437,7 @@ export async function buildSitrep(userId: string): Promise<SitrepResult> {
     budget,
     withinNormalRange,
     snoozedCount: snoozedInstruments.size,
+    trackRecord,
     belowBudget,
     watchlistSize: rows.length,
     quiet: surfaced.length === 0,
@@ -510,6 +541,7 @@ function emptyResult(displayName: string, attentionBudget: number): SitrepResult
     budget: { CRITICAL: 0, IMPORTANT: 0, WATCH: 0, INFO: 0, NOISE: 0 },
     withinNormalRange: 0,
     snoozedCount: 0,
+    trackRecord: {},
     belowBudget: 0,
     watchlistSize: 0,
     quiet: true,
