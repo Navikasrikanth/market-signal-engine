@@ -1,6 +1,6 @@
 import type { Bar, CandidateEvent, FeatureVector, Signal } from './types'
 import { absReturnSample, moveInSigmas, rvolSample } from './features'
-import { robustZ, squash } from './math'
+import { clamp, robustZ, squash } from './math'
 
 /**
  * The six core detectors.
