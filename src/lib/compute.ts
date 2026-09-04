@@ -2,6 +2,7 @@ import { db } from './db'
 import { runPipeline, toEngineBars, type InstrumentDay, type PipelineEvent } from './pipeline'
 import { detectThemes, type ThemeMember } from '@/engine/theme'
 import { followThroughRate } from '@/engine/followthrough'
+import { bumpGeneration } from './cache'
 import { ENGINE_VERSION } from '@/engine/types'
 import type { Bar, Severity } from '@/engine/types'
 import { MARKET_BENCHMARK } from './universe'
@@ -171,6 +172,11 @@ export async function computeAndPersist(options: ComputeOptions = {}) {
 
   const themeCount = await persistThemes(allDays, loaded, benchmark)
   await persistScorecard(scorecard, loaded)
+
+  // Retire every cached read in one operation. Bumping a counter rather than
+  // scanning and deleting keeps a cache outage from becoming a database
+  // outage: the old entries simply become unreachable and expire on their own.
+  await bumpGeneration()
 
   return { events: persisted, themes: themeCount, activeDays: allDays.length }
 }

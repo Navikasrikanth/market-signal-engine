@@ -4,6 +4,7 @@ import { currentUser } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { ENGINE_VERSION, SCORER_VERSION } from '@/engine/types'
 import { queueDepths } from '@/lib/queue'
+import { cacheStats } from '@/lib/cache'
 
 export const dynamic = 'force-dynamic'
 
@@ -32,6 +33,7 @@ export default async function PipelinePage() {
     ])
 
   const queues = await queueDepths()
+  const cache = cacheStats()
   const unconfirmedBars = await db.dailyBar.count({ where: { confirmed: false } })
   const singleSource = await db.dailyBar.count({ where: { confidence: { lt: 1 } } })
 
@@ -152,6 +154,29 @@ export default async function PipelinePage() {
             </tbody>
           </table>
         </div>
+      </Section>
+
+      <Section title="CACHE">
+        <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
+          <Stat label="enabled" value={cache.enabled ? 'yes' : 'no'} />
+          <Stat
+            label="hit rate"
+            value={
+              cache.hitRate === null
+                ? 'no reads yet'
+                : `${(cache.hitRate * 100).toFixed(0)}%`
+            }
+          />
+          <Stat label="hits / misses" value={`${cache.hits} / ${cache.misses}`} />
+          <Stat label="errors" value={String(cache.errors)} />
+        </dl>
+        <p className="mt-3 text-xs leading-relaxed text-[color:var(--ink-3)]">
+          Cache-aside, and never a dependency. Every read falls through to
+          Postgres on a miss, an error or a timeout, so losing Redis costs
+          latency and nothing else. Correctness comes from generation
+          invalidation, not from expiry &mdash; TTL is only there so superseded
+          generations do not accumulate.
+        </p>
       </Section>
 
       <Section title="QUEUES">

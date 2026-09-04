@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { requireUser } from '@/lib/auth'
+import { invalidateUser } from '@/lib/cache'
 import { db } from '@/lib/db'
 import { handler, ok, problem, parseBody } from '@/lib/api'
 
@@ -95,6 +96,10 @@ export const POST = handler(async (req) => {
     update: {},
   })
 
+  // Priority, intent and membership all change how the brief is scored and
+  // ranked, so the cached brief is no longer the answer to the same question.
+  await invalidateUser(user.id)
+
   return ok({ symbol: instrument.symbol }, { status: 201 })
 })
 
@@ -121,6 +126,7 @@ export const PATCH = handler(async (req) => {
     },
   })
 
+  await invalidateUser(user.id)
   return ok({ symbol: instrument.symbol })
 })
 
@@ -140,5 +146,6 @@ export const DELETE = handler(async (req) => {
     where: { watchlistId: watchlist.id, instrumentId: instrument.id },
   })
 
+  await invalidateUser(user.id)
   return ok({ symbol: instrument.symbol })
 })

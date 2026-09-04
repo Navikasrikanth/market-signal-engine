@@ -128,7 +128,9 @@ const LOCK_TIMEOUT_MS = 2_000
 
 /** A plain Redis connection, used only for locks. */
 function lockClient(): Redis {
-  lock ??= new Redis(process.env.REDIS_URL ?? 'redis://localhost:6380', {
+  if (lock) return lock
+
+  const redis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6380', {
     maxRetriesPerRequest: 1,
     // Commands issued before the socket is ready are QUEUED, not rejected.
     //
@@ -137,7 +139,14 @@ function lockClient(): Redis {
     // at all and two ingestion cycles ran side by side. The timeout below is
     // what bounds the wait; refusing to buffer was never the right guard.
     enableOfflineQueue: true,
+    lazyConnect: true,
   })
+  // Same reason as the cache client: an open socket keeps scripts alive.
+  redis.once('ready', () => redis.stream?.unref?.())
+  redis.on('error', () => {})
+  redis.connect().catch(() => {})
+
+  lock = redis
   return lock
 }
 

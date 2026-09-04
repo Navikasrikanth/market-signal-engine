@@ -18,7 +18,7 @@
     "fixtures:trim": "tsx scripts/trim-fixtures.ts",
     "demo:reset": "tsx prisma/seed.ts && tsx scripts/load-fixtures.ts && tsx scripts/compute.ts --from=2024-01-01 --replace && tsx scripts/seed-demo.ts --days=75",
     "worker": "tsx worker/index.ts",
-    "verify": "tsx scripts/verify-requirements.ts && tsx scripts/verify-auth.ts && tsx scripts/verify-ingestion.ts",
+    "verify": "tsx scripts/verify-requirements.ts && tsx scripts/verify-auth.ts && tsx scripts/verify-ingestion.ts && tsx scripts/verify-cache.ts",
     "test:e2e": "playwright test"
   },
   "dependencies": {

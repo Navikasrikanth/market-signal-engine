@@ -17,6 +17,7 @@ import type {
 } from '@/engine/types'
 import { MARKET_BENCHMARK } from './universe'
 import { sessionsBehind, tradingDaysBetween } from './market-calendar'
+import { cached, invalidateUser, TTL } from './cache'
 
 /**
  * The SITREP: what changed since this user last looked.
@@ -476,7 +477,25 @@ export async function buildSitrep(userId: string): Promise<SitrepResult> {
  * since you last looked" — the second is the thing the user actually missed,
  * and it is invisible to any watchlist that only shows a daily change.
  */
+/**
+ * Window statistics for one instrument, cached.
+ *
+ * This is the actual O(watchlist) cost in the read path: one query per watched
+ * name, per brief. Caching it is the difference between the scaling story
+ * being an argument and being true — and because the value depends only on
+ * stored bars and the cursor, generation invalidation retires it correctly
+ * whenever compute runs.
+ */
 async function windowStats(instrumentId: string, since: Date | null) {
+  return cached(
+    'windowStats',
+    `${instrumentId}:${since?.toISOString() ?? 'none'}`,
+    TTL.windowStats,
+    () => computeWindowStats(instrumentId, since),
+  )
+}
+
+async function computeWindowStats(instrumentId: string, since: Date | null) {
   const bars = await db.dailyBar.findMany({
     where: { instrumentId },
     orderBy: { barDate: 'desc' },
@@ -640,6 +659,11 @@ export async function markSeen(
     data: { lastActiveAt: now },
   })
 
+  // The brief this user sees has just changed. Explicit invalidation, not a
+  // short TTL: acknowledging something and then seeing it again would break
+  // the one interaction the whole product is built around.
+  await invalidateUser(userId)
+
   return { moved }
 }
 
@@ -748,6 +772,7 @@ export async function snoozeEvents(
     })
   }
 
+  await invalidateUser(userId)
   return { snoozed: allowed.length }
 }
 
