@@ -214,6 +214,8 @@ export async function closeQueues() {
   ingestQueue = null
   computeQueue = null
   auxQueue = null
-  await lock?.quit().catch(() => {})
+  // Same reason as the cache client: `quit` waits for a connection that may
+  // never arrive, so shutdown hangs on an unreachable Redis.
+  lock?.disconnect()
   lock = null
 }

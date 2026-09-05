@@ -33,7 +33,7 @@ Open http://localhost:3000 and sign in as `demo@sitrep.local` / `sitrep-demo-202
 npm test              # 225 unit tests, engine + ingestion
 npm run test:e2e      # 4 Playwright journeys through a real browser
 npm run calibrate     # replay history, rewrite docs/calibration.md
-npm run verify        # 69 checks: requirements, auth, ingestion, cache
+npm run verify        # 82 checks: requirements, auth, ingestion, cache
 ```
 
 ### Background ingestion (optional, needs API keys)
@@ -409,7 +409,7 @@ Run `npx tsx scripts/verify-auth.ts` — 12 checks against real Postgres, includ
 
 ## Testing
 
-225 unit tests, 12 browser journeys, and 69 checks against real Postgres and Redis across four verification suites — requirements, auth, ingestion and cache.
+225 unit tests, 12 browser journeys, and 82 checks against real Postgres and Redis across four verification suites — requirements, auth, ingestion and cache.
 
 Every detector has a **firing fixture and a must-not-fire fixture** — a detector that only ever fires is indistinguishable from a broken one, and on a product whose promise is filtering noise, false positives are the expensive failure.
 

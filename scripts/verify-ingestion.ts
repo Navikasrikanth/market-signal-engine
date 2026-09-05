@@ -6,6 +6,7 @@ import { validateBars } from '../src/lib/ingest/validate'
 import { reconcileBar } from '../src/lib/ingest/reconcile'
 import { dueAt } from '../src/lib/schedule'
 import { sessionsBehind, tradingDaysBetween } from '../src/lib/market-calendar'
+import { FixtureSource, fixtureMode } from '../src/lib/sources/fixture'
 import type { RawBar } from '../src/lib/sources/types'
 
 /**
@@ -202,6 +203,110 @@ async function main() {
     kept.bar.close === 144 && !kept.conflicts[0].trustOverride,
     'a fixed percentage threshold would reject this',
   )
+
+  // ------------------------------------------------------------------- 6
+  console.log('\n[6] A long outage heals, rather than healing ten days of it')
+
+  // The previous window was a fixed ten-day lookback, so an outage longer than
+  // that left a hole no later run would ever look for. Deleting three weeks is
+  // the case that used to be permanent.
+  const nvda = await db.instrument.findUniqueOrThrow({
+    where: { symbol: 'NVDA' },
+    select: { id: true },
+  })
+
+  const from = new Date('2026-07-06T00:00:00Z')
+  const to = new Date('2026-07-24T00:00:00Z')
+
+  const removed = await db.dailyBar.findMany({
+    where: { instrumentId: nvda.id, barDate: { gte: from, lte: to } },
+  })
+
+  if (removed.length < 10) {
+    check('fixture data present for the outage test', false, `${removed.length} bars`)
+  } else {
+    await db.dailyBar.deleteMany({
+      where: { instrumentId: nvda.id, barDate: { gte: from, lte: to } },
+    })
+
+    const gaps = await findGaps(new Date(), ['NVDA'])
+    const window = repairWindow(gaps[0])
+
+    check(
+      'a three-week outage is detected in full',
+      gaps[0].holes.length === removed.length,
+      `${gaps[0].holes.length} sessions missing, all of them found`,
+    )
+    check(
+      'and the repair window spans the whole outage, not the last ten days',
+      window !== null &&
+        window.from <= '2026-07-06' &&
+        window.to >= '2026-07-24',
+      window ? `${window.from} to ${window.to}` : 'none',
+    )
+
+    // Restore, so the check is non-destructive.
+    await db.dailyBar.createMany({ data: removed })
+    const after = await findGaps(new Date(), ['NVDA'])
+    check('and the series is whole once repaired', after[0].holes.length === 0)
+  }
+
+  // ------------------------------------------------------------------- 7
+  console.log('\n[7] A failed fetch never overwrites known-good data')
+
+  const storedBefore = await db.dailyBar.findMany({
+    where: { instrumentId: nvda.id },
+    orderBy: { barDate: 'desc' },
+    take: 5,
+    select: { barDate: true, close: true },
+  })
+
+  // What a provider outage actually delivers: nothing usable. Validation
+  // rejects the lot, so there is no path from here to a write.
+  const garbage = validateBars([
+    { ...bar('2026-09-02', -1), close: -1 },
+    { ...bar('2026-09-03', 0), close: 0 },
+  ])
+
+  check(
+    'an unusable response yields no valid rows to write',
+    garbage.valid.length === 0 && garbage.rejected.length === 2,
+    garbage.rejected.map((r) => r.reason).join('; ').slice(0, 60),
+  )
+
+  const storedAfter = await db.dailyBar.findMany({
+    where: { instrumentId: nvda.id },
+    orderBy: { barDate: 'desc' },
+    take: 5,
+    select: { barDate: true, close: true },
+  })
+
+  check(
+    'and the stored bars are untouched',
+    JSON.stringify(storedBefore) === JSON.stringify(storedAfter),
+    'an absence of information is not evidence the stored value is wrong',
+  )
+
+  // ------------------------------------------------------------------- 8
+  console.log('\n[8] Fixture mode really makes no network calls')
+
+  const wasFixture = process.env.FIXTURE_MODE
+  process.env.FIXTURE_MODE = '1'
+  check('the gate reports fixture mode', fixtureMode() === true)
+
+  const fixtureBars = await new FixtureSource('twelvedata', 1).fetchDailyBars(
+    'NVDA',
+    { from: '2026-08-01', to: '2026-09-03' },
+  )
+  check(
+    'and a fixture source serves real bars without a provider',
+    fixtureBars.length > 10,
+    `${fixtureBars.length} bars from committed history`,
+  )
+
+  process.env.FIXTURE_MODE = '0'
+  check('the gate reports live mode when told to', fixtureMode() === false)
+  process.env.FIXTURE_MODE = wasFixture
 
   console.log(`\n${'='.repeat(50)}`)
   console.log(`${passed} passed, ${failed} failed`)

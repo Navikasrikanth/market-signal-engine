@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { currentUser } from '@/lib/auth'
 import { replayCustom, replayScenario, SCENARIOS } from '@/lib/scenarios'
 import { CustomRange } from '@/components/CustomRange'
+import { tradingDaysBetween } from '@/lib/market-calendar'
 import { ReplayPlayer } from '@/components/ReplayPlayer'
 import { TopNav } from '@/components/TopNav'
 
@@ -26,7 +27,22 @@ export default async function ReplayPage({ searchParams }: PageProps<'/replay'>)
   // would be the product rather than examples of it.
   const from = typeof params.from === 'string' ? params.from : null
   const to = typeof params.to === 'string' ? params.to : null
-  const isCustom = isDate(from) && isDate(to) && from! < to!
+  // Bounded, and the reason is usability rather than CPU.
+  //
+  // Seven years of history renders in 1.6 seconds - but it produces 1,305
+  // steps, and a player that advances one trading day at a time is not a
+  // replay at that length, it is a haystack. The featured windows are 17 and
+  // 27 steps. Refusing loudly beats truncating silently, because a user who
+  // asked for 2019 and got 2026 would have no way to know.
+  const MAX_SESSIONS = 120
+
+  const rangeSessions =
+    isDate(from) && isDate(to) && from! < to!
+      ? tradingDaysBetween(from!, to!).length
+      : 0
+
+  const tooLong = rangeSessions > MAX_SESSIONS
+  const isCustom = isDate(from) && isDate(to) && from! < to! && !tooLong
 
   const slug =
     typeof params.s === 'string' && SCENARIOS.some((x) => x.slug === params.s)
@@ -82,6 +98,22 @@ export default async function ReplayPage({ searchParams }: PageProps<'/replay'>)
       </nav>
 
       <CustomRange from={from} to={to} active={isCustom} />
+
+      {tooLong && (
+        <div
+          className="mt-4 rounded-md border px-3 py-2 text-sm"
+          style={{ borderColor: 'var(--accent)', color: 'var(--accent-ink)' }}
+          role="status"
+        >
+          <span className="font-mono text-[10px] tracking-wider">
+            RANGE TOO LONG
+          </span>{' '}
+          {from} to {to} is {rangeSessions} trading sessions. Replay steps one
+          day at a time, so anything past {MAX_SESSIONS} stops being something
+          you can watch. Choose a shorter window — the featured examples are
+          under thirty.
+        </div>
+      )}
 
       <ReplayPlayer scenario={scenario} steps={steps} />
     </main>

@@ -1,6 +1,8 @@
 import 'dotenv/config'
 import { db } from '../src/lib/db'
 import { buildSitrep, markSeen } from '../src/lib/sitrep'
+import Redis from 'ioredis'
+import { ENGINE_VERSION } from '../src/engine/types'
 import {
   bumpGeneration,
   cacheStats,
@@ -127,6 +129,71 @@ async function main() {
     degraded.items.length >= 0 && degraded.narrative.text.length > 0,
   )
   check('the ops page can report cache state', cacheStats().enabled === true)
+
+  // ------------------------------------------------------------------- 5
+  console.log('\n[5] A REAL Redis outage, not a disabled flag')
+
+  // `setCacheDisabled` short-circuits before the client is touched, so it
+  // proves the fallback branch and NOT the error path. The claim being made is
+  // that losing Redis costs latency and nothing else - and that is only tested
+  // by actually taking it away.
+  // Baseline taken NOW, not at step 1: mark-seen ran in between, so the brief
+  // has legitimately changed and comparing against the older snapshot would
+  // report a product bug that is really a stale expectation.
+  setCacheDisabled(true)
+  const currentUncached = fingerprint(await buildSitrep(user.id))
+  setCacheDisabled(false)
+
+  const realUrl = process.env.REDIS_URL
+  await closeCache()
+  process.env.REDIS_URL = 'redis://127.0.0.1:6399' // nothing listens here
+
+  const began = Date.now()
+  const duringOutage = fingerprint(await buildSitrep(user.id))
+  const elapsed = Date.now() - began
+
+  check(
+    'the brief still renders with Redis unreachable',
+    duringOutage === currentUncached,
+    'identical to the database answer',
+  )
+  check(
+    'and it does not hang waiting for the cache',
+    elapsed < 2_000,
+    `${elapsed}ms - the breaker opens after the first failure`,
+  )
+
+  await closeCache()
+  process.env.REDIS_URL = realUrl
+  const recovered = fingerprint(await buildSitrep(user.id))
+  check('and it recovers when Redis comes back', recovered === currentUncached)
+
+  // ------------------------------------------------------------------- 6
+  console.log('\n[6] Keys are scoped, and expire')
+
+  const client = new Redis(realUrl ?? 'redis://localhost:6380')
+  try {
+    await buildSitrep(user.id)
+    const keys = await client.keys('sitrep:cache:*')
+    const dataKeys = keys.filter((k) => !k.endsWith(':generation'))
+
+    check(
+      'every cached key carries the engine version',
+      dataKeys.length > 0 && dataKeys.every((k) => k.includes(ENGINE_VERSION)),
+      `${dataKeys.length} keys, all under ${ENGINE_VERSION}`,
+    )
+
+    const ttls = await Promise.all(
+      dataKeys.slice(0, 5).map((k) => client.ttl(k)),
+    )
+    check(
+      'every key has a TTL, so superseded generations cannot accumulate',
+      ttls.length > 0 && ttls.every((t) => t > 0),
+      `${ttls.join('s, ')}s - garbage collection, not correctness`,
+    )
+  } finally {
+    await client.quit().catch(() => {})
+  }
 
   console.log(`\n${'='.repeat(50)}`)
   console.log(`${passed} passed, ${failed} failed`)

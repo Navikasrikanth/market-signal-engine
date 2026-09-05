@@ -58,6 +58,9 @@ const stats = { hits: 0, misses: 0, errors: 0 }
 
 function connection(): Redis | null {
   if (disabled) return null
+  // An open breaker means the last few calls all timed out. Skipping outright
+  // turns an outage into one delay rather than twenty.
+  if (breakerOpen()) return null
   if (client) return client
 
   const redis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6380', {
@@ -85,14 +88,67 @@ function connection(): Redis | null {
   return client
 }
 
+/**
+ * A breaker, so an outage costs one timeout rather than one per call.
+ *
+ * Every cache read is individually bounded at 250ms, which is correct and was
+ * not enough: assembling a brief makes roughly twenty cache calls, so with
+ * Redis unreachable the page took **5.1 seconds** to render the same answer
+ * Postgres could give immediately. Bounded, but linearly in the number of
+ * calls - which is the shape of an outage being paid for repeatedly.
+ *
+ * After a run of failures the cache is skipped outright for a cool-off period.
+ * It reopens on its own, so recovery needs no intervention.
+ */
+const BREAKER_THRESHOLD = 3
+const BREAKER_COOLOFF_MS = 30_000
+
+let consecutiveFailures = 0
+let breakerOpenUntil = 0
+
+function breakerOpen(): boolean {
+  if (breakerOpenUntil === 0) return false
+  if (Date.now() < breakerOpenUntil) return true
+  // Cool-off elapsed: let one request through and see.
+  breakerOpenUntil = 0
+  consecutiveFailures = 0
+  return false
+}
+
+function recordFailure(): void {
+  consecutiveFailures++
+  if (consecutiveFailures >= BREAKER_THRESHOLD) {
+    breakerOpenUntil = Date.now() + BREAKER_COOLOFF_MS
+  }
+}
+
+function recordSuccess(): void {
+  consecutiveFailures = 0
+  breakerOpenUntil = 0
+}
+
 async function bounded<T>(op: Promise<T>, fallback: T): Promise<T> {
   try {
-    return await Promise.race([
+    let timedOut = false
+    const result = await Promise.race([
       op,
-      new Promise<T>((resolve) => setTimeout(() => resolve(fallback), TIMEOUT_MS)),
+      new Promise<T>((resolve) =>
+        setTimeout(() => {
+          timedOut = true
+          resolve(fallback)
+        }, TIMEOUT_MS),
+      ),
     ])
+    if (timedOut) {
+      stats.errors++
+      recordFailure()
+    } else {
+      recordSuccess()
+    }
+    return result
   } catch {
     stats.errors++
+    recordFailure()
     return fallback
   }
 }
@@ -185,12 +241,15 @@ export function cacheStats(): {
   errors: number
   hitRate: number | null
   enabled: boolean
+  /** True while the cache is being skipped after repeated failures. */
+  breakerOpen: boolean
 } {
   const total = stats.hits + stats.misses
   return {
     ...stats,
     hitRate: total > 0 ? stats.hits / total : null,
     enabled: !disabled,
+    breakerOpen: breakerOpenUntil > Date.now(),
   }
 }
 
@@ -200,8 +259,19 @@ export function setCacheDisabled(value: boolean): void {
 }
 
 export async function closeCache(): Promise<void> {
-  await client?.quit().catch(() => {})
+  // `disconnect`, not `quit`.
+  //
+  // `quit` is graceful: it waits for pending commands and for the connection
+  // to be established before closing. On a client that never connected - which
+  // is exactly the case when Redis is unreachable - it never resolves, and the
+  // process hangs at exit with every check already passed. `disconnect` tears
+  // the socket down immediately, which is the correct behaviour for shutdown.
+  client?.disconnect()
   client = null
+  // A reconnect deserves a fresh assessment rather than inheriting a breaker
+  // opened against the previous endpoint.
+  consecutiveFailures = 0
+  breakerOpenUntil = 0
 }
 
 /**

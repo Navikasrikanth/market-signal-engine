@@ -10,6 +10,46 @@ look for.
 
 ---
 
+## Session 11 — auditing the plan against the code
+
+Went through `rev 9` line by line. Most of it was built. **Five verification
+claims were written in the plan and never actually tested**, and writing them
+found three real bugs.
+
+### Fixed
+
+- **A Redis outage cost 5.1 seconds, not 250ms.** Every cache read is bounded
+  at 250ms, which is correct and was not enough: a brief makes ~20 cache calls,
+  so an outage was paid for twenty times over. A breaker now opens after three
+  consecutive failures and reopens on its own. **5143ms → 805ms.**
+- **`closeCache()` could hang forever.** `quit()` is graceful — it waits for the
+  connection to be established before closing, and on a client that never
+  connected it never resolves. Every check would pass and the process would
+  hang at exit. `disconnect()` instead. This also took `npm run verify` from
+  over two minutes (hanging) to **10.8 seconds**.
+- **Custom replay ranges were unbounded** — the exact risk the plan named and
+  never mitigated. Seven years renders in 1.6s but produces **1,305 steps**,
+  and a player that advances one day at a time is not a replay at that length.
+  Capped at 120 sessions, refused loudly rather than truncated silently.
+
+### Tests written for claims the plan had only asserted
+
+- a **real** Redis outage, rather than the disabled flag — different code path
+- every cache key carries the engine version, and every key has a TTL
+- a **three-week** outage heals in full, not just its last ten days
+- a failed provider response never overwrites known-good data
+- fixture mode genuinely serves from committed history
+
+Infrastructure checks: 69 → **82**.
+
+### Exposed
+
+- The outage test failed first time for the wrong reason: it compared against a
+  baseline captured before `markSeen` ran earlier in the same script. A stale
+  expectation reported as a product bug.
+
+---
+
 ## Session 10 — docs, the 40-bar residual, and an end-to-end pass
 
 ### Built
