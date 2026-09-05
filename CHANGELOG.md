@@ -10,6 +10,39 @@ look for.
 
 ---
 
+## Session 12 — live by default, and three bugs only a live run could find
+
+A product whose premise is "what changed since you last looked" cannot
+sensibly default to a dataset that never changes. Fixture mode still exists
+so a keyless clone works — but it is now **detected, not declared**.
+
+### Built
+
+- **Mode is inferred.** No keys → committed history. Keys present → live.
+  `FIXTURE_MODE` still overrides in both directions, for tests and for
+  demonstrating without burning quota. A switch people must remember to flip is
+  a switch that will be wrong.
+
+### Fixed — all three found by running it live
+
+- **The daily update was broken, on the most common case there is.** Gap repair
+  asks for exactly the missing sessions, which for a routine daily update is a
+  single day — and Twelve Data answers `start_date == end_date` with
+  `400 "No data is available on the specified dates"` **even when that date has
+  data**. The window is now padded four days either side; writes are idempotent
+  upserts, so overlap costs nothing.
+- **Tiingo was paced against a limit it does not have.** Its 50/hour is a
+  quota, not a rolling per-minute rate, so starting the bucket empty cost 72
+  seconds before the first request and would have made a daily update take
+  **31 minutes**. Bursting is allowed there; it is not on Twelve Data.
+- **Compute raced itself.** At concurrency 2, two wholesale replaces both
+  cleared the scorecard and both inserted, and the loser died on
+  `detector_scorecards_pkey`. Compute is single-flight now, *and* the write is
+  an upsert — a write that is only correct because nothing else runs is a trap
+  for whoever changes the concurrency next.
+
+---
+
 ## Session 11 — auditing the plan against the code
 
 Went through `rev 9` line by line. Most of it was built. **Five verification

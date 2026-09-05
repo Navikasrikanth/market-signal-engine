@@ -106,8 +106,19 @@ export const twelveDataBucket = new TokenBucket({
  * place to put it.
  */
 
-/** Tiingo free tier: 50 requests/hour. Far tighter, so paced accordingly. */
+/**
+ * Tiingo free tier: 50 requests per HOUR.
+ *
+ * Bursting is allowed here, and that difference matters. Twelve Data enforces a
+ * rolling per-minute rate, so a burst breaches it seconds later; Tiingo's limit
+ * is an hourly quota, and spending 26 of 50 at once is entirely within it.
+ *
+ * Starting empty would have cost 72 seconds before the FIRST request and 31
+ * minutes for the universe — pacing against a limit that was never per-minute,
+ * and turning a three-minute daily update into a half-hour one.
+ */
 export const tiingoBucket = new TokenBucket({
   capacity: 50,
   windowMs: 60 * 60_000,
+  allowBurst: true,
 })

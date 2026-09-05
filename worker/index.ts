@@ -41,8 +41,18 @@ const CONCURRENCY = {
   // Bounded by provider rate limits, not by CPU. Twelve Data allows 8/min and
   // Tiingo 50/hour, so more parallelism here buys nothing but 429s.
   ingest: 1,
-  // Compute is pure arithmetic over in-memory arrays; this is CPU-bound.
-  compute: 2,
+  // ONE.
+  //
+  // Compute is pure arithmetic and would parallelise happily - but the job it
+  // runs is a wholesale REPLACE of events, themes and the scorecard. Two of
+  // those at once both delete and then both insert, and the second insert
+  // collides on a primary key it has already written:
+  //
+  //   Unique constraint failed on the constraint: detector_scorecards_pkey
+  //
+  // The writes are now idempotent as well (see persistScorecard), but two
+  // concurrent full recomputes were never a sensible thing to allow.
+  compute: 1,
   // News and intraday both walk the universe symbol by symbol against the
   // same rate limits. Two at once would only produce 429s.
   aux: 1,

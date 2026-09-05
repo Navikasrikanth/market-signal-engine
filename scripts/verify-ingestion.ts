@@ -75,9 +75,16 @@ async function main() {
       gaps[0].holes.includes('2026-08-19'),
       'MAX(barDate) reports this series as healthy',
     )
+    const win = repairWindow(gaps[0])
     check(
-      'the repair window covers exactly the missing date',
-      repairWindow(gaps[0])?.from === '2026-08-19',
+      'the repair window covers the missing date',
+      win !== null && win.from <= '2026-08-19' && win.to >= '2026-08-19',
+      win ? `${win.from} to ${win.to}` : 'none',
+    )
+    check(
+      'and is never a single day, which providers reject outright',
+      win !== null && win.from < win.to,
+      'Twelve Data answers start_date == end_date with a 400',
     )
     check('the summary counts it', summary.totalHoles === 1)
 

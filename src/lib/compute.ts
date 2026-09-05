@@ -224,15 +224,26 @@ async function persistScorecard(
   const windowStart = new Date(`${dates[0]}T00:00:00Z`)
   const windowEnd = new Date(`${dates[dates.length - 1]}T00:00:00Z`)
 
-  await db.detectorScorecard.deleteMany({})
-  await db.detectorScorecard.createMany({
-    data: [...scorecard.entries()].map(([detector, s]) => ({
-      detector,
-      engineV: ENGINE_VERSION,
-      windowStart,
-      windowEnd,
-      ...s,
-    })),
+  // Upsert per row rather than delete-then-insert.
+  //
+  // The wholesale replace raced itself: two concurrent computes would both
+  // clear the table and both insert, and the loser collided on the primary
+  // key. Compute is single-flight now, but a write that is only correct
+  // because nothing else runs is a trap for whoever changes the concurrency
+  // next.
+  for (const [detector, stat] of scorecard) {
+    const row = { engineV: ENGINE_VERSION, windowStart, windowEnd, ...stat }
+    await db.detectorScorecard.upsert({
+      where: { detector },
+      create: { detector, ...row },
+      update: row,
+    })
+  }
+
+  // Detectors that fired under a previous engine and no longer exist would
+  // otherwise linger as a track record for something that is not running.
+  await db.detectorScorecard.deleteMany({
+    where: { detector: { notIn: [...scorecard.keys()] } },
   })
 }
 

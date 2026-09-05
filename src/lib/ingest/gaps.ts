@@ -116,13 +116,41 @@ export async function findGaps(
  * has. A hole makes the window reach back to cover it, because providers serve
  * ranges rather than individual dates.
  */
+/**
+ * Padding, because a provider will not serve a single day.
+ *
+ * Asking for exactly the missing sessions is the obviously correct thing and it
+ * fails on the most common case there is. Twelve Data answers a request where
+ * `start_date == end_date` with:
+ *
+ *     400 "No data is available on the specified dates."
+ *
+ * even when that date has data. One missing session is the normal daily
+ * update, so the routine path was the one that broke — and only a live run at
+ * exactly the right moment would ever show it.
+ *
+ * Widening costs nothing: every write is an idempotent upsert with
+ * `skipDuplicates`, so overlap re-reads rows we already hold and stores none of
+ * them twice.
+ */
+const WINDOW_PAD_DAYS = 4
+
 export function repairWindow(
   gaps: InstrumentGaps,
 ): { from: string; to: string } | null {
   const missing = [...gaps.holes, ...gaps.tail].sort()
   if (missing.length === 0) return null
 
-  return { from: missing[0], to: missing[missing.length - 1] }
+  const pad = (date: string, days: number): string => {
+    const d = new Date(`${date}T00:00:00Z`)
+    d.setUTCDate(d.getUTCDate() + days)
+    return d.toISOString().slice(0, 10)
+  }
+
+  return {
+    from: pad(missing[0], -WINDOW_PAD_DAYS),
+    to: pad(missing[missing.length - 1], WINDOW_PAD_DAYS),
+  }
 }
 
 /** Summary for the ops page and the brief's staleness warning. */
