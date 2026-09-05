@@ -3,6 +3,9 @@ import Link from 'next/link'
 import { currentUser } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { WatchlistManager } from '@/components/WatchlistManager'
+import { AccountControls } from '@/components/AccountControls'
+import { DEFAULT_ATTENTION_BUDGET } from '@/lib/sitrep'
+import { TopNav } from '@/components/TopNav'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,6 +21,13 @@ export const dynamic = 'force-dynamic'
 export default async function WatchlistPage() {
   const user = await currentUser()
   if (!user) redirect('/login')
+
+  const settings = (
+    await db.user.findUniqueOrThrow({
+      where: { id: user.id },
+      select: { settings: true },
+    })
+  ).settings as { attentionBudget?: number } | null
 
   const watchlist = await db.watchlist.findFirst({
     where: { userId: user.id },
@@ -41,17 +51,7 @@ export default async function WatchlistPage() {
 
   return (
     <main className="mx-auto w-full max-w-3xl px-5 py-10">
-      <div className="flex items-baseline justify-between gap-4">
-        <span className="font-mono text-[11px] tracking-[0.2em] text-[color:var(--accent-ink)]">
-          SITREP
-        </span>
-        <Link
-          href="/"
-          className="font-mono text-[11px] tracking-wide text-[color:var(--ink-3)] underline decoration-dotted underline-offset-4 hover:text-[color:var(--accent-ink)]"
-        >
-          back to brief
-        </Link>
-      </div>
+      <TopNav current="/watchlist" />
 
       <h1 className="mt-6 text-2xl font-semibold tracking-tight">
         Manage your watchlist
@@ -63,6 +63,21 @@ export default async function WatchlistPage() {
         cares about deterioration.
       </p>
 
+      {/*
+        Settings first, inventory second.
+        
+        These sat below the list, which meant scrolling past seventeen rows to
+        reach them - so in practice nobody would. Same failure as sign-out
+        living at the bottom of this page: built, rendering, and unreachable.
+        The list is the inventory; these are the controls that change what the
+        product does with it.
+      */}
+      <div className="mt-6">
+        <AccountControls
+          budget={settings?.attentionBudget ?? DEFAULT_ATTENTION_BUDGET}
+        />
+      </div>
+
       <WatchlistManager
         items={(watchlist?.items ?? []).map((i) => ({
           symbol: i.instrument.symbol,
@@ -73,6 +88,7 @@ export default async function WatchlistPage() {
         }))}
         available={available.filter((a) => !watched.has(a.symbol))}
       />
+
     </main>
   )
 }

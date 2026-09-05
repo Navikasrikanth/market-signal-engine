@@ -1,5 +1,6 @@
 import type { BarSource, FetchBarsOptions, RawBar } from './types'
 import { SourceDataError } from './types'
+import { tiingoBucket } from './rate-limit'
 
 /**
  * Tiingo — second bar source, used only for cross-source reconciliation.
@@ -36,6 +37,7 @@ export class TiingoSource implements BarSource {
     if (opts.from) url.searchParams.set('startDate', opts.from)
     if (opts.to) url.searchParams.set('endDate', opts.to)
 
+    await tiingoBucket.take()
     const res = await fetch(url, {
       headers: {
         'Content-Type': 'application/json',

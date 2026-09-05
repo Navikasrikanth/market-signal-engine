@@ -6,14 +6,23 @@ import {
   redisConnection,
   getComputeQueue,
   getIngestQueue,
+  getAuxQueue,
+  withLock,
+  type AuxJob,
   type ComputeJob,
   type IngestJob,
 } from '../src/lib/queue'
+import { dueAt } from '../src/lib/schedule'
+import { findGaps, repairWindow } from '../src/lib/ingest/gaps'
+import { handleAux } from './aux-jobs'
 import { computeAndPersist } from '../src/lib/compute'
 import { TwelveDataSource } from '../src/lib/sources/twelvedata'
 import { TiingoSource } from '../src/lib/sources/tiingo'
 import { validateBars } from '../src/lib/ingest/validate'
-import { reconcileSeries } from '../src/lib/ingest/reconcile'
+import {
+  reconcileSeries,
+  RECONCILIATION_VERSION,
+} from '../src/lib/ingest/reconcile'
 import { FixtureSource, fixtureMode } from '../src/lib/sources/fixture'
 import type { RawBar } from '../src/lib/sources/types'
 
@@ -32,8 +41,21 @@ const CONCURRENCY = {
   // Bounded by provider rate limits, not by CPU. Twelve Data allows 8/min and
   // Tiingo 50/hour, so more parallelism here buys nothing but 429s.
   ingest: 1,
-  // Compute is pure arithmetic over in-memory arrays; this is CPU-bound.
-  compute: 2,
+  // ONE.
+  //
+  // Compute is pure arithmetic and would parallelise happily - but the job it
+  // runs is a wholesale REPLACE of events, themes and the scorecard. Two of
+  // those at once both delete and then both insert, and the second insert
+  // collides on a primary key it has already written:
+  //
+  //   Unique constraint failed on the constraint: detector_scorecards_pkey
+  //
+  // The writes are now idempotent as well (see persistScorecard), but two
+  // concurrent full recomputes were never a sensible thing to allow.
+  compute: 1,
+  // News and intraday both walk the universe symbol by symbol against the
+  // same rate limits. Two at once would only produce 429s.
+  aux: 1,
 }
 
 async function handleIngest(job: Job<IngestJob>) {
@@ -49,6 +71,20 @@ async function handleIngest(job: Job<IngestJob>) {
     data: { sourceId: 'twelvedata', status: 'running', note: `queued:${symbol}` },
   })
 
+  // The newest bar we already hold, so the first row of an incremental fetch
+  // is checked against real history rather than against nothing.
+  const anchorRow = await db.dailyBar.findFirst({
+    where: { instrumentId: instrument.id, barDate: { lt: new Date(`${from ?? '9999-12-31'}T00:00:00Z`) } },
+    orderBy: { barDate: 'desc' },
+    select: { barDate: true, close: true },
+  })
+  const anchor = anchorRow
+    ? {
+        date: anchorRow.barDate.toISOString().slice(0, 10),
+        close: Number(anchorRow.close),
+      }
+    : null
+
   const series: Array<{ sourceId: string; trustRank: number; bars: RawBar[] }> = []
   let rejected = 0
 
@@ -57,7 +93,7 @@ async function handleIngest(job: Job<IngestJob>) {
   for (const [sourceId, trustRank, fetcher] of sources()) {
     try {
       const bars = await fetcher(symbol, from, to)
-      const validated = validateBars(bars)
+      const validated = validateBars(bars, anchor)
       rejected += validated.rejected.length
       for (const r of validated.rejected) {
         await db.deadLetter.create({
@@ -95,6 +131,14 @@ async function handleIngest(job: Job<IngestJob>) {
   }
 
   if (series.length === 0) {
+    // Every provider failed. Record it, leave what we already have alone, and
+    // retry next cycle.
+    //
+    // The rule this enforces: NEVER overwrite known-good data with a failed or
+    // partial response. A failed fetch is an absence of information, not
+    // evidence that the stored value is wrong - and a product whose whole
+    // premise is "what changed since you looked" cannot afford to answer that
+    // question from data it just deleted.
     await db.ingestRun.update({
       where: { id: run.id },
       data: { finishedAt: new Date(), status: 'failed', rowsRejected: rejected },
@@ -134,6 +178,10 @@ async function handleIngest(job: Job<IngestJob>) {
         valueB: c.valueB,
         deltaPct: c.deltaPct,
         resolvedTo: c.resolvedTo,
+        resolvedValue: c.resolvedValue,
+        reason: c.reason,
+        trustOverride: c.trustOverride,
+        algorithmV: RECONCILIATION_VERSION,
       })),
       skipDuplicates: true,
     })
@@ -238,9 +286,15 @@ async function main() {
     { connection, concurrency: CONCURRENCY.compute },
   )
 
+  const auxWorker = new Worker<AuxJob>(QUEUE_NAMES.auxiliary, handleAux, {
+    connection,
+    concurrency: CONCURRENCY.aux,
+  })
+
   for (const [name, worker] of [
     ['ingest', ingestWorker],
     ['compute', computeWorker],
+    ['aux', auxWorker],
   ] as const) {
     worker.on('completed', (job, result) => {
       console.log(`[${name}] ${job.id} done`, JSON.stringify(result))
@@ -316,6 +370,86 @@ async function main() {
     void scheduleCompute()
   })
 
+  // ---------------------------------------------------------------- schedule
+  //
+  // The worker schedules itself. Previously nothing did: the cron endpoint
+  // existed and had to be called by hand, so for a product whose premise is
+  // "come back and see what changed", data only advanced when a human poked
+  // it.
+  //
+  // Every tick asks the market calendar what is due. Nothing market-facing
+  // runs at a weekend, on a holiday, or outside the session it belongs to -
+  // polling intraday bars around the clock would spend most of a daily quota
+  // re-reading a market that has not moved since Friday.
+  const TICK_MS = 60_000
+  const lastRun = new Map<string, number>()
+
+  async function scheduleTick() {
+    const now = new Date()
+
+    for (const cadence of dueAt(now)) {
+      const previous = lastRun.get(cadence.kind) ?? 0
+      if (now.getTime() - previous < cadence.everyMs) continue
+      lastRun.set(cadence.kind, now.getTime())
+
+      try {
+        if (cadence.kind === 'bars') {
+          await enqueueGapRepairs()
+        } else {
+          await getAuxQueue().add(
+            cadence.kind,
+            { kind: cadence.kind },
+            { jobId: `${cadence.kind}-${Math.floor(now.getTime() / cadence.everyMs)}` },
+          )
+        }
+      } catch (e) {
+        console.error(`[schedule] ${cadence.kind}: ${(e as Error).message}`)
+      }
+    }
+  }
+
+  /**
+   * Ask for exactly the sessions that are missing.
+   *
+   * Single-flighted: job ids already deduplicate identical work, but they do
+   * not stop a new cycle starting while the previous one is still running, and
+   * two cycles racing spend provider quota twice for one result. The database
+   * stays correct either way - writes are idempotent upserts - so this is
+   * about money, not correctness.
+   */
+  async function enqueueGapRepairs() {
+    const result = await withLock('ingest-cycle', 600, async () => {
+      const gaps = await findGaps(new Date())
+      const jobs = gaps
+        .map((gap) => ({ gap, window: repairWindow(gap) }))
+        .filter((x) => x.window !== null)
+        .map(({ gap, window }) => ({
+          name: 'ingest-symbol',
+          data: { symbol: gap.symbol, from: window!.from, to: window!.to },
+          opts: {
+            jobId: `ingest-${gap.symbol}-${window!.from}-${window!.to}`,
+          },
+        }))
+
+      if (jobs.length === 0) return { enqueued: 0, upToDate: gaps.length }
+      await getIngestQueue().addBulk(jobs)
+      return { enqueued: jobs.length, upToDate: gaps.length - jobs.length }
+    })
+
+    if (result === null) {
+      console.log('[schedule] ingest cycle already running, skipped')
+      return
+    }
+    if (result.enqueued > 0) {
+      console.log(
+        `[schedule] bars: ${result.enqueued} to repair, ${result.upToDate} up to date`,
+      )
+    }
+  }
+
+  const tick = setInterval(() => void scheduleTick(), TICK_MS)
+  void scheduleTick()
+
   console.log('worker up')
   console.log(
     fixtureMode()
@@ -324,11 +458,18 @@ async function main() {
   )
   console.log(`  ingest   concurrency ${CONCURRENCY.ingest}`)
   console.log(`  compute  concurrency ${CONCURRENCY.compute}`)
+  console.log(`  aux      concurrency ${CONCURRENCY.aux}`)
+  console.log(`  schedule tick every ${TICK_MS / 1000}s, market-aware`)
 
   const shutdown = async () => {
     if (settleTimer) clearTimeout(settleTimer)
     console.log('\nshutting down')
-    await Promise.all([ingestWorker.close(), computeWorker.close()])
+    if (tick) clearInterval(tick)
+    await Promise.all([
+      ingestWorker.close(),
+      computeWorker.close(),
+      auxWorker.close(),
+    ])
     await db.$disconnect()
     process.exit(0)
   }

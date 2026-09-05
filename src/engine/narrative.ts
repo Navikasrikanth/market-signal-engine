@@ -253,3 +253,73 @@ export function buildNarrative(input: NarrativeInput): Narrative {
 function fmtPct(x: number): string {
   return `${x >= 0 ? '+' : ''}${(x * 100).toFixed(1)}%`
 }
+
+// ---------------------------------------------------------------- absence
+
+export interface AbsenceFacts {
+  /** Trading sessions between the cursor and now. */
+  sessions: number
+  /** Watched names that moved more than 20% over the window. */
+  bigMovers: number
+  /** Largest absolute window move, as a fraction. */
+  largestMovePct: number
+  largestMoveSymbol: string | null
+  themesFormed: number
+  earningsReported: number
+  /** Names whose intraday path went materially further than their endpoint. */
+  roundTrips: number
+}
+
+/**
+ * One sentence, before any card.
+ *
+ * A reader arriving after ten weeks should not have to parse five ranked cards
+ * to learn the shape of what they missed. Every clause is a COUNT of something
+ * already computed - no adjectives, no characterisation, nothing generated.
+ * Clauses that would be zero are omitted rather than written as "0 themes",
+ * because a sentence full of zeroes reads as noise and hides the parts that
+ * are not zero.
+ */
+export function absenceSummary(f: AbsenceFacts): string | null {
+  if (f.sessions <= 0) return null
+
+  const parts: string[] = []
+
+  if (f.bigMovers > 0) {
+    parts.push(
+      `${f.bigMovers} name${f.bigMovers === 1 ? '' : 's'} moved more than 20%`,
+    )
+  } else if (f.largestMoveSymbol && Math.abs(f.largestMovePct) >= 0.05) {
+    parts.push(
+      `the largest move was ${f.largestMoveSymbol} at ${fmtPct(f.largestMovePct)}`,
+    )
+  }
+
+  if (f.themesFormed > 0) {
+    parts.push(
+      `${f.themesFormed} theme${f.themesFormed === 1 ? '' : 's'} formed`,
+    )
+  }
+
+  if (f.earningsReported > 0) {
+    parts.push(
+      `${f.earningsReported} name${f.earningsReported === 1 ? '' : 's'} reported earnings`,
+    )
+  }
+
+  if (f.roundTrips > 0) {
+    parts.push(
+      `${f.roundTrips} went materially further than ${f.roundTrips === 1 ? 'it' : 'they'} finished`,
+    )
+  }
+
+  if (parts.length === 0) return null
+
+  const sessions = `In ${f.sessions} trading session${f.sessions === 1 ? '' : 's'}`
+  const body =
+    parts.length === 1
+      ? parts[0]
+      : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`
+
+  return `${sessions}: ${body}.`
+}

@@ -1,5 +1,12 @@
-import type { BarSource, FetchBarsOptions, RawBar } from './types'
+import type {
+  BarSource,
+  FetchBarsOptions,
+  IntradaySource,
+  RawBar,
+  RawIntradayBar,
+} from './types'
 import { SourceDataError } from './types'
+import { twelveDataBucket } from './rate-limit'
 
 /**
  * Twelve Data — primary bar source.
@@ -12,7 +19,7 @@ import { SourceDataError } from './types'
  * proof-of-work bot challenge, and after confirming Finnhub gates
  * `/stock/candle` behind a paid plan.
  */
-export class TwelveDataSource implements BarSource {
+export class TwelveDataSource implements BarSource, IntradaySource {
   readonly id = 'twelvedata'
   readonly trustRank = 1
 
@@ -35,6 +42,10 @@ export class TwelveDataSource implements BarSource {
     if (opts.from) url.searchParams.set('start_date', opts.from)
     if (opts.to) url.searchParams.set('end_date', opts.to)
 
+    // Wait for a token rather than earn a 429. A rejected request costs both
+    // the call and the data; a pause costs only time, and every caller here
+    // runs on a schedule with minutes of headroom.
+    await twelveDataBucket.take()
     const res = await fetch(url)
     if (!res.ok) {
       throw new SourceDataError(this.id, symbol, `HTTP ${res.status}`)
@@ -42,6 +53,71 @@ export class TwelveDataSource implements BarSource {
 
     const body = (await res.json()) as TwelveDataResponse
     return parseTwelveData(body, symbol, this.id)
+  }
+
+  /**
+   * 15-minute bars for the recent window.
+   *
+   * Fifteen minutes rather than hourly for one reason: an hourly bar saying
+   * "between 10:00 and 11:00" carries the same information as "in the
+   * morning". It cannot separate a 10:15 headline from a 10:20 crash. Storage
+   * was never the constraint - 26 instruments over 30 days is roughly 14,000
+   * rows either way.
+   *
+   * Free-tier depth reaches back about nine months, which is why historical
+   * replay stays daily rather than pretending to intraday resolution it does
+   * not have.
+   */
+  async fetchIntradayBars(
+    symbol: string,
+    days: number,
+  ): Promise<RawIntradayBar[]> {
+    const url = new URL('https://api.twelvedata.com/time_series')
+    url.searchParams.set('symbol', symbol)
+    url.searchParams.set('interval', '15min')
+    // ~26 bars a session; a generous cap that still fits one request.
+    url.searchParams.set('outputsize', String(Math.min(5000, days * 30)))
+    url.searchParams.set('order', 'ASC')
+    url.searchParams.set('apikey', this.apiKey)
+
+    // Wait for a token rather than earn a 429. A rejected request costs both
+    // the call and the data; a pause costs only time, and every caller here
+    // runs on a schedule with minutes of headroom.
+    await twelveDataBucket.take()
+    const res = await fetch(url)
+    if (!res.ok) {
+      throw new SourceDataError(this.id, symbol, `HTTP ${res.status}`)
+    }
+
+    const body = (await res.json()) as TwelveDataResponse
+    if (body.status === 'error') {
+      throw new SourceDataError(this.id, symbol, body.message ?? 'error')
+    }
+    if (!Array.isArray(body.values)) {
+      throw new SourceDataError(this.id, symbol, 'no values in response')
+    }
+
+    return body.values
+      .map((v) => ({
+        // Twelve Data returns exchange-local time without a zone. Treated as
+        // US/Eastern and converted by the caller, which owns the calendar.
+        at: v.datetime.includes(' ')
+          ? v.datetime.replace(' ', 'T') + 'Z'
+          : v.datetime + 'T00:00:00Z',
+        open: Number(v.open),
+        high: Number(v.high),
+        low: Number(v.low),
+        close: Number(v.close),
+        volume: Number(v.volume ?? 0),
+      }))
+      .filter(
+        (b) =>
+          Number.isFinite(b.close) &&
+          b.close > 0 &&
+          Number.isFinite(b.high) &&
+          Number.isFinite(b.low) &&
+          b.high >= b.low,
+      )
   }
 }
 

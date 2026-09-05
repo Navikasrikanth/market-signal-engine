@@ -1,6 +1,6 @@
 import type { Bar, CandidateEvent, FeatureVector, Signal } from './types'
 import { absReturnSample, moveInSigmas, rvolSample } from './features'
-import { robustZ, squash } from './math'
+import { clamp, robustZ, squash } from './math'
 
 /**
  * The six core detectors.
@@ -64,8 +64,8 @@ export const THRESHOLDS = {
    * short-vs-long contraction, so a name in a permanently sleepy regime does
    * not report itself as newly still every single day.
    */
-  quietPercentile: 0.1,
-  quietContraction: 0.7,
+  quietPercentile: 0.05,
+  quietContraction: 0.6,
 } as const
 
 function pct(x: number): string {

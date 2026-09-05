@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import type { Contribution } from '@/engine/types'
+import type { TrackRecord } from '@/engine/followthrough'
 
 /**
  * "Why am I seeing this?" and, more importantly, "Why not higher?".
@@ -20,10 +21,13 @@ export function WhyPanel({
   score,
   positives,
   suppressors,
+  trackRecord = {},
 }: {
   score: number
   positives: Contribution[]
   suppressors: Contribution[]
+  /** How often this kind of reason has preceded a real move. Keyed by signal. */
+  trackRecord?: Record<string, TrackRecord>
 }) {
   const [open, setOpen] = useState(false)
 
@@ -51,9 +55,12 @@ export function WhyPanel({
 
           <ul className="flex flex-col gap-1.5">
             {positives.map((c) => (
-              <li key={c.key} className="flex items-center gap-2">
+              <li key={c.key} className="flex items-start gap-2">
                 <span className="text-[color:var(--up)]">✓</span>
-                <span className="flex-1 text-[color:var(--ink-2)]">{c.label}</span>
+                <span className="flex-1 text-[color:var(--ink-2)]">
+                  {c.label}
+                  <Record record={trackRecord[c.key]} />
+                </span>
                 <ContributionBar
                   contribution={c}
                   max={maxAdditive}
@@ -62,6 +69,19 @@ export function WhyPanel({
               </li>
             ))}
           </ul>
+
+          {/*
+            Stated, not implied. Headlines appear on the card above, and the
+            one thing a reader must not conclude is that they contributed to
+            the number - because unstructured text is not something this engine
+            scores, and pretending otherwise would undo the whole argument that
+            every point here traces to a calculation.
+          */}
+          <p className="mt-3 text-[11px] leading-relaxed text-[color:var(--ink-3)]">
+            News is shown for context only. No headline contributes to this
+            score; every point above comes from price, volume and volatility
+            arithmetic.
+          </p>
 
           {suppressors.length > 0 && (
             <>
@@ -88,6 +108,32 @@ export function WhyPanel({
         </div>
       )}
     </div>
+  )
+}
+
+/**
+ * The reason's own track record, stated next to the reason.
+ *
+ * A score is a claim; this says how often that kind of claim has been followed
+ * by something. Absent below the sample floor rather than shown with a caveat -
+ * a percentage that thirty observations cannot support should not be on screen
+ * at all.
+ */
+function Record({ record }: { record?: TrackRecord }) {
+  if (!record) return null
+
+  const weak = record.lift !== null && record.lift < 1
+
+  return (
+    <span
+      className="mt-0.5 block font-mono text-[10px] tracking-wide"
+      style={{ color: weak ? 'var(--down)' : 'var(--ink-3)' }}
+      title="Share of past alerts of this kind followed by a 1.5-sigma move within 3 sessions"
+    >
+      preceded a real move {(record.rate * 100).toFixed(0)}% of the time (n=
+      {record.n.toLocaleString()})
+      {record.lift !== null && ` · ${record.lift.toFixed(2)}× baseline`}
+    </span>
   )
 }
 

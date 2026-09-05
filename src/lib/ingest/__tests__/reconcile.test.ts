@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  abnormality,
   reconcileBar,
   reconcileSeries,
   TOLERANCE,
@@ -281,5 +282,121 @@ describe('validateBars', () => {
     for (const r of rejected) {
       expect(r.reason.length).toBeGreaterThan(0)
     }
+  })
+})
+
+describe('sanity beats trust', () => {
+  /** A $180 stock that moves about 1.5% a session. */
+  const history = {
+    recentCloses: [175, 178, 181, 177, 180, 179, 182, 178],
+  }
+
+  it('rejects a decimal-shift glitch from the HIGHER-trust provider', () => {
+    // The case this exists for. Twelve Data is trustRank 1, so the old code
+    // stored $18 and marked the bar merely "unconfirmed" - a corrupt price
+    // presented as a mild disagreement.
+    const result = reconcileBar(
+      [
+        sourced('twelvedata', 1, { close: 18, open: 18, high: 18.2, low: 17.9 }),
+        sourced('tiingo', 2, { close: 180, open: 179, high: 181, low: 178 }),
+      ],
+      history,
+    )!
+
+    expect(result.bar.close).toBe(180)
+    expect(result.source).toBe('tiingo')
+
+    const closeConflict = result.conflicts.find((c) => c.field === 'close')!
+    expect(closeConflict.resolvedTo).toBe('tiingo')
+    expect(closeConflict.resolvedValue).toBe(180)
+    expect(closeConflict.reason).toBe('PRIMARY_VALUE_FAILED_HISTORY_SANITY')
+    expect(closeConflict.trustOverride).toBe(true)
+  })
+
+  it('does NOT override for a legitimate high-volatility move', () => {
+    // A 20% move is enormous, and for a name that routinely moves 15% it is
+    // not evidence of corruption. A fixed percentage threshold gets this
+    // wrong; measuring against the instrument's own behaviour does not.
+    const volatile = {
+      recentCloses: [100, 118, 96, 112, 99, 115, 101, 120],
+    }
+
+    const result = reconcileBar(
+      [
+        sourced('twelvedata', 1, { close: 144 }),
+        sourced('tiingo', 2, { close: 120 }),
+      ],
+      volatile,
+    )!
+
+    expect(result.bar.close).toBe(144)
+    expect(result.source).toBe('twelvedata')
+    const conflict = result.conflicts.find((c) => c.field === 'close')!
+    expect(conflict.reason).toBe('HIGHER_TRUST_SOURCE')
+    expect(conflict.trustOverride).toBe(false)
+  })
+
+  it('falls back to trust when there is no history to judge against', () => {
+    const result = reconcileBar(
+      [
+        sourced('twelvedata', 1, { close: 18 }),
+        sourced('tiingo', 2, { close: 180 }),
+      ],
+      { recentCloses: [] },
+    )!
+
+    // Without history the engine has no basis to overrule the ranking, and
+    // guessing would be worse than deferring. The disagreement is still
+    // recorded, and the bar is still marked unconfirmed.
+    expect(result.bar.close).toBe(18)
+    expect(result.confirmed).toBe(false)
+    expect(result.conflicts[0].reason).toBe('HIGHER_TRUST_SOURCE')
+  })
+
+  it('records the decision even when trust wins', () => {
+    // Both values are plausible for this instrument, so the ranking decides -
+    // and the decision is still written down.
+    const result = reconcileBar(
+      [sourced('twelvedata', 1, { close: 179 }), sourced('tiingo', 2, { close: 185 })],
+      history,
+    )!
+
+    const conflict = result.conflicts.find((c) => c.field === 'close')!
+    expect(conflict.resolvedValue).toBe(179)
+    expect(conflict.reason).toBe('HIGHER_TRUST_SOURCE')
+    expect(conflict.trustOverride).toBe(false)
+  })
+
+  it('defers to trust when BOTH values are implausible', () => {
+    // Neither price fits the history. Picking the less-wrong one would be
+    // dressing a guess up as a sanity check; the honest outcome is to keep
+    // the ranking's answer and mark the bar unconfirmed.
+    const result = reconcileBar(
+      [sourced('twelvedata', 1, { close: 20 }), sourced('tiingo', 2, { close: 25 })],
+      history,
+    )!
+
+    expect(result.bar.close).toBe(20)
+    expect(result.confirmed).toBe(false)
+    expect(result.conflicts[0].trustOverride).toBe(false)
+  })
+})
+
+describe('abnormality', () => {
+  it('scales by the instrument’s own typical move, not a fixed percentage', () => {
+    const calm = { recentCloses: [100, 100.5, 99.8, 100.2, 100.1, 99.9] }
+    const wild = { recentCloses: [100, 118, 96, 112, 99, 115] }
+
+    // The same candidate is wildly abnormal for one and unremarkable for the
+    // other. A universal 20% band cannot express that.
+    const candidate = 120
+    expect(abnormality(candidate, calm)!).toBeGreaterThan(
+      abnormality(candidate, wild)!,
+    )
+  })
+
+  it('returns null rather than guessing on thin history', () => {
+    expect(abnormality(120, { recentCloses: [100] })).toBeNull()
+    expect(abnormality(120, undefined)).toBeNull()
   })
 })

@@ -31,6 +31,36 @@ export interface BarSource {
   fetchDailyBars(symbol: string, opts?: FetchBarsOptions): Promise<RawBar[]>
 }
 
+/** A 15-minute bar. Chronology only — never an analytical input. */
+export interface RawIntradayBar {
+  /** Bar open time, ISO 8601 UTC. */
+  at: string
+  open: number
+  high: number
+  low: number
+  close: number
+  volume: number
+}
+
+export interface IntradaySource {
+  readonly id: string
+  fetchIntradayBars(symbol: string, days: number): Promise<RawIntradayBar[]>
+}
+
+/** One headline. Attaches to events; never creates one. */
+export interface RawNews {
+  publishedAt: string
+  headline: string
+  source: string
+  url: string
+  summary: string | null
+}
+
+export interface NewsSource {
+  readonly id: string
+  fetchNews(symbol: string, from: string, to: string): Promise<RawNews[]>
+}
+
 export interface RawEarnings {
   symbol: string
   /** `YYYY-MM-DD` */

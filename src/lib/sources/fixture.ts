@@ -78,8 +78,30 @@ export class FixtureSource implements BarSource {
   }
 }
 
-/** True when the app must not touch the network, whatever keys happen to be set. */
+/**
+ * Should this run offline?
+ *
+ * Detected rather than declared. The product's whole premise is "what changed
+ * since you last looked", so a configuration that can never change is a
+ * contradiction — and making offline the default meant anyone who had supplied
+ * API keys still got frozen data until they remembered a second switch. A flag
+ * people must remember to flip is a flag that will be wrong.
+ *
+ * So: keys present means live, keys absent means fixtures. A reviewer cloning
+ * with no credentials gets a working product; anyone who has gone to the
+ * trouble of getting keys gets the live one, without being asked twice.
+ *
+ * `FIXTURE_MODE` still overrides in both directions, because forcing offline is
+ * a real need — running the test suite, demonstrating without burning quota, or
+ * proving the no-network claim.
+ */
 export function fixtureMode(): boolean {
-  const v = process.env.FIXTURE_MODE
-  return v === '1' || v === 'true'
+  const explicit = process.env.FIXTURE_MODE
+  if (explicit === '1' || explicit === 'true') return true
+  if (explicit === '0' || explicit === 'false') return false
+
+  // Unset: decide from what is actually available. Bars need BOTH providers,
+  // because a single source cannot be reconciled and reconciliation is not
+  // optional here.
+  return !(process.env.TWELVE_DATA_API_KEY && process.env.TIINGO_API_KEY)
 }

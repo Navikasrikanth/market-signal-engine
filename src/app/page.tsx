@@ -7,6 +7,7 @@ import { StoryBlock } from '@/components/StoryBlock'
 import { ThemeCard } from '@/components/ThemeCard'
 import { AttentionBudget } from '@/components/AttentionBudget'
 import { MarkAllSeen } from '@/components/MarkAllSeen'
+import { TopNav } from '@/components/TopNav'
 
 export const dynamic = 'force-dynamic'
 
@@ -27,6 +28,11 @@ export default async function Page() {
     <main className="mx-auto w-full max-w-3xl px-5 py-10">
       <Header sitrep={sitrep} />
 
+      <StalenessWarning
+        sessionsBehind={sitrep.dataQuality.sessionsBehind}
+        holes={sitrep.dataQuality.holes}
+      />
+
       {sitrep.watchlistSize === 0 ? (
         <EmptyWatchlist />
       ) : sitrep.quiet ? (
@@ -38,7 +44,11 @@ export default async function Page() {
         <>
           <section className="mt-6 flex flex-col gap-3">
             {sitrep.items.map((item) => (
-              <EventCard key={item.symbol} item={item} />
+              <EventCard
+                key={item.symbol}
+                item={item}
+                trackRecord={sitrep.trackRecord}
+              />
             ))}
           </section>
 
@@ -51,6 +61,11 @@ export default async function Page() {
       )}
 
       <div className="mt-8 flex flex-col gap-4">
+        <Chronology
+          entries={sitrep.chronology}
+          cameAndWent={sitrep.cameAndWent}
+        />
+
         <StoryBlock narrative={sitrep.narrative} />
 
         {sitrep.themes.map((theme) => (
@@ -88,24 +103,7 @@ function Header({
 
   return (
     <header>
-      <div className="flex items-baseline justify-between gap-4">
-        <span className="font-mono text-[11px] tracking-[0.2em] text-[color:var(--accent-ink)]">
-          SITREP
-        </span>
-        <span className="flex items-center gap-4 font-mono text-[10px] tracking-wide text-[color:var(--ink-3)]">
-          <span>
-            {sitrep.asOf
-              ? `data as of ${new Date(sitrep.asOf).toISOString().slice(0, 10)}`
-              : 'no data yet'}
-          </span>
-          <Link
-            href="/watchlist"
-            className="underline decoration-dotted underline-offset-4 hover:text-[color:var(--accent-ink)]"
-          >
-            manage watchlist
-          </Link>
-        </span>
-      </div>
+      <TopNav current="/" asOf={sitrep.asOf} />
 
       <h1 className="mt-6 text-2xl font-semibold tracking-tight">
         Good morning, {sitrep.displayName}.
@@ -121,6 +119,30 @@ function Header({
               : "HERE'S WHAT CHANGED SINCE YOU LAST CHECKED"}
           </p>
 
+          {/*
+            Ground the window in a recorded fact rather than a computed
+            estimate. The cursor says when the data was last acknowledged; the
+            sign-in audit says when the person was actually last here.
+          */}
+          {sitrep.previousVisit && (
+            <p className="mt-1 text-xs text-[color:var(--ink-3)]">
+              You last signed in on{' '}
+              {sitrep.previousVisit.at.toISOString().slice(0, 10)} at{' '}
+              {sitrep.previousVisit.at.toISOString().slice(11, 16)} UTC.
+            </p>
+          )}
+
+          {/*
+            The shape of the absence, before any card. Counts of things already
+            computed - a reader arriving after ten weeks should not have to
+            parse five ranked cards to learn what kind of ten weeks it was.
+          */}
+          {sitrep.absenceSummary && (
+            <p className="mt-3 text-[15px] leading-snug text-[color:var(--ink-2)]">
+              {sitrep.absenceSummary}
+            </p>
+          )}
+
           <div className="mt-2 flex items-center justify-between gap-4">
             <p className="text-lg text-[color:var(--ink-2)]">
               {sitrep.items.length === 0
@@ -132,6 +154,115 @@ function Header({
         </>
       )}
     </header>
+  )
+}
+
+/**
+ * Say so when the data is behind.
+ *
+ * The single most dangerous failure this product has is silence: missing data
+ * renders as a calm market, and a calm market is a real answer here. Once
+ * ingestion runs unattended, an outage would otherwise look exactly like
+ * nothing happening.
+ *
+ * Measured in trading sessions, so a weekend never triggers it — a warning
+ * that cries wolf every Saturday is one users learn to ignore by Tuesday.
+ */
+function StalenessWarning({
+  sessionsBehind,
+  holes,
+}: {
+  sessionsBehind: number
+  holes: number
+}) {
+  if (sessionsBehind === 0 && holes === 0) return null
+
+  return (
+    <div
+      className="mt-4 rounded-md border px-3 py-2 text-sm"
+      style={{ borderColor: 'var(--accent)', color: 'var(--accent-ink)' }}
+      role="status"
+    >
+      <span className="font-mono text-[10px] tracking-wider">DATA IS BEHIND</span>{' '}
+      {sessionsBehind > 0 && (
+        <>
+          The newest prices are {sessionsBehind} trading session
+          {sessionsBehind === 1 ? '' : 's'} old.{' '}
+        </>
+      )}
+      {holes > 0 && (
+        <>
+          {holes} session{holes === 1 ? ' is' : 's are'} missing from the recent
+          history.{' '}
+        </>
+      )}
+      Treat this brief as incomplete rather than as a quiet market.
+    </div>
+  )
+}
+
+/**
+ * What happened, in order — and what came and went.
+ *
+ * The ranked cards answer "what matters now". This answers "what happened",
+ * which is what someone returning after a fortnight asks first and which
+ * ranking structurally cannot tell them: ranking only sees the present, so an
+ * event that fired and resolved while they were away is invisible in it. That
+ * is a silent omission, and it is exactly what "you missed" means.
+ */
+function Chronology({
+  entries,
+  cameAndWent,
+}: {
+  entries: Awaited<ReturnType<typeof buildSitrep>>['chronology']
+  cameAndWent: Awaited<ReturnType<typeof buildSitrep>>['cameAndWent']
+}) {
+  if (entries.length === 0 && cameAndWent.length === 0) return null
+
+  return (
+    <section className="rounded-lg border border-[color:var(--border)] bg-[color:var(--surface)] p-4">
+      <h2 className="mb-3 font-mono text-[10px] tracking-wider text-[color:var(--ink-3)]">
+        WHILE YOU WERE AWAY
+      </h2>
+
+      {entries.length > 0 && (
+        <ol className="flex flex-col gap-2 border-l border-[color:var(--border-strong)] pl-4">
+          {entries.map((e, i) => (
+            <li key={`${e.date}-${e.symbol}-${i}`} className="text-sm">
+              <span className="tabular font-mono text-[11px] text-[color:var(--ink-3)]">
+                {e.date}
+                {e.timeOfDay ? ` ${e.timeOfDay}` : ''}
+              </span>
+              <span className="ml-2 text-[color:var(--ink-2)]">
+                {e.symbol ? `${e.symbol} — ` : ''}
+                {e.text}
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
+
+      {cameAndWent.length > 0 && (
+        <div className="mt-4 border-t border-[color:var(--border)] pt-3">
+          <p className="mb-2 font-mono text-[10px] tracking-wider text-[color:var(--ink-3)]">
+            CAME AND WENT
+          </p>
+          <ul className="flex flex-col gap-1 text-sm text-[color:var(--ink-2)]">
+            {cameAndWent.map((c) => (
+              <li key={c.symbol}>
+                <span className="font-mono text-xs">{c.symbol}</span> · {c.date}{' '}
+                — {c.headline}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-[color:var(--ink-3)]">
+            These are no longer ranked, because they are no longer true. They
+            are here because they happened while you were gone, and a brief that
+            only shows what still holds would never mention them at all.
+          </p>
+        </div>
+      )}
+    </section>
   )
 }
 

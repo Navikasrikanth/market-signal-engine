@@ -30,6 +30,15 @@ const CORR_LONG = 120
 const QUIET_LOOKBACK = 252
 
 /**
+ * Minimum sample before a volatility percentile is reported at all.
+ *
+ * The detector's headline claims "quieter than 95% of the last year". Ranking
+ * against 50 sessions and calling it a year would be a lie in the copy, not
+ * merely a weak statistic, so the feature returns null instead.
+ */
+const QUIET_MIN_SAMPLE = 120
+
+/**
  * Compute the feature vector for the LAST bar in `bars`.
  *
  * Point-in-time by construction: this function can only see the array it is
@@ -178,7 +187,7 @@ function correlationAgainst(
  * computed across the trailing year. 0 means the quietest the name has been.
  */
 function rankRv10(closes: number[], today: number): number | null {
-  if (closes.length < 40) return null
+  if (closes.length < QUIET_MIN_SAMPLE) return null
 
   const sample: number[] = []
   const start = Math.max(11, closes.length - QUIET_LOOKBACK)
@@ -186,7 +195,7 @@ function rankRv10(closes: number[], today: number): number | null {
     const v = realisedVol(closes.slice(0, i + 1), 10)
     if (v !== null) sample.push(v)
   }
-  if (sample.length < 30) return null
+  if (sample.length < QUIET_MIN_SAMPLE) return null
 
   return percentileRank(today, sample)
 }

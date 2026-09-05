@@ -1,5 +1,6 @@
 import 'dotenv/config'
 import { db } from '../src/lib/db'
+import { bumpGeneration, closeCache } from '../src/lib/cache'
 import { buildSitrep, ensureCursors } from '../src/lib/sitrep'
 
 /**
@@ -27,6 +28,19 @@ async function main() {
   await db.userWatchState.deleteMany({ where: { userId: user.id } })
   await db.userEventState.deleteMany({ where: { userId: user.id } })
 
+  // Clear failed sign-ins too. Resetting the demo has to reset ALL of the
+  // demo's state: a run of bad passwords from a previous session would
+  // otherwise lock the account out and make the next demo look broken.
+  await db.loginAttempt.deleteMany({ where: { email: user.email } })
+
+  // Retire every cached read.
+  //
+  // This script rewrites cursors and event state directly through Prisma, so
+  // nothing in the request path knows the world changed underneath it - the
+  // demo would keep serving a brief assembled before the reset. Resetting the
+  // demo has to reset the cache too, or "npm run demo:reset" quietly does not.
+  await bumpGeneration()
+
   const planted = await ensureCursors(user.id, since)
 
   // A little variety in priority, so the Why panel has something to explain
@@ -42,11 +56,36 @@ async function main() {
     INTC: 'LOW',
     ADBE: 'LOW',
   }
-  const intents: Record<string, 'CONSIDERING_BUY' | 'HOLDING'> = {
+  // Enough stated intent that the positions view has something to say.
+  //
+  // Four names out of seventeen left the page nearly empty, which made a
+  // feature that works look like one that does not. A realistic user declares
+  // an intent for most of what they bother to watch - and the mix has to
+  // include a hedge and a thematic holding, because those two are where the
+  // framing differs most from a plain up/down reading.
+  const intents: Record<
+    string,
+    'CONSIDERING_BUY' | 'HOLDING' | 'HEDGE' | 'THEMATIC'
+  > = {
     NVDA: 'HOLDING',
-    AMD: 'CONSIDERING_BUY',
     AAPL: 'HOLDING',
+    MSFT: 'HOLDING',
+    AVGO: 'HOLDING',
+    GOOGL: 'HOLDING',
+    AMD: 'CONSIDERING_BUY',
     TSLA: 'CONSIDERING_BUY',
+    INTC: 'CONSIDERING_BUY',
+    MU: 'CONSIDERING_BUY',
+    // No HEDGE here, deliberately.
+    //
+    // Nothing in this universe is one. The sector ETFs are used as regression
+    // proxies rather than watchable instruments, and there is no inverse or
+    // defensive holding among the equities - so labelling one a hedge would be
+    // a demo that lies about what the data is. The framing exists and is
+    // unit-tested; it simply has nothing honest to attach to here.
+    PLTR: 'THEMATIC',
+    CRM: 'THEMATIC',
+    NFLX: 'THEMATIC',
   }
 
   for (const item of watchlist.items) {
@@ -116,4 +155,7 @@ main()
     console.error(e)
     process.exit(1)
   })
-  .finally(() => db.$disconnect())
+  .finally(async () => {
+    await closeCache()
+    await db.$disconnect()
+  })

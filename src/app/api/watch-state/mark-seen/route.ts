@@ -12,11 +12,17 @@ const schema = z.object({
   eventIds: z.array(z.string()).max(MAX_IDS).optional().default([]),
   /** Acknowledge everything currently in the brief. */
   all: z.boolean().optional().default(false),
+  /**
+   * Symbol to its position in the brief at the moment of acknowledgement.
+   * Recorded so the next brief can report how a name has moved in your
+   * attention, which nothing else in the product can say.
+   */
+  ranks: z.record(z.string(), z.number().int().positive()).optional().default({}),
 })
 
 export const POST = handler(async (req) => {
   const user = await requireUser()
-  const { symbols, eventIds, all } = await parseBody(req, schema)
+  const { symbols, eventIds, all, ranks } = await parseBody(req, schema)
 
   // Resolve symbols through this user's own watchlist, so a request naming a
   // symbol they do not watch cannot move a cursor they do not own.
@@ -32,6 +38,13 @@ export const POST = handler(async (req) => {
         .filter((i) => (symbols ?? []).includes(i.instrument.symbol))
         .map((i) => i.instrumentId)
 
-  const result = await markSeen(user.id, instrumentIds, eventIds)
+  // Ranks arrive keyed by symbol; markSeen works in instrument ids.
+  const byInstrumentId: Record<string, number> = {}
+  for (const item of owned) {
+    const rank = ranks[item.instrument.symbol]
+    if (typeof rank === 'number') byInstrumentId[item.instrumentId] = rank
+  }
+
+  const result = await markSeen(user.id, instrumentIds, eventIds, byInstrumentId)
   return ok(result)
 })

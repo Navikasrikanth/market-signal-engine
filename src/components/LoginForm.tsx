@@ -81,7 +81,7 @@ export function LoginForm() {
       <p className="mt-4 rounded-md border border-[color:var(--border)] bg-[color:var(--surface)] p-3 font-mono text-[11px] leading-relaxed text-[color:var(--ink-3)]">
         demo account
         <br />
-        demo@sitrep.local / sitrep-demo
+        demo@sitrep.local / sitrep-demo-2026
       </p>
     </form>
   )

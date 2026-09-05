@@ -8,7 +8,11 @@ import {
   MIN_THEME_MEMBERS,
   type ThemeMember,
 } from '../theme'
-import { buildNarrative, type NarrativeInput } from '../narrative'
+import {
+  absenceSummary,
+  buildNarrative,
+  type NarrativeInput,
+} from '../narrative'
 import { rng } from '../testing/synthetic'
 
 /**
@@ -185,6 +189,29 @@ describe('detectThemes', () => {
     expect(t.confidence).toBeGreaterThan(MIN_THEME_CONFIDENCE)
     expect(t.summary).toMatch(/selling pressure/)
     expect(t.characteristics.length).toBeGreaterThan(0)
+  })
+
+  it('excludes directionless members from a theme', () => {
+    // correlation_break and quiet_regime emit direction 0 on purpose: a name
+    // decoupling from its peers, or going still, is a claim about structure,
+    // not about which way it went. Such an event must never be counted as
+    // evidence that a sector is under selling pressure or showing strength.
+    const four = members(['NVDA', 'AMD', 'AVGO', 'MU'], {
+      ret: -0.062,
+      marketExplained: -0.004,
+      residuals: correlatedResiduals(4),
+    })
+    const structural = { ...four[3], symbol: 'QCOM', direction: 0 as const }
+
+    const themes = detectThemes(
+      [...four.slice(0, 3), structural],
+      '2024-03-08',
+      '2024-03-08',
+    )
+
+    expect(themes).toHaveLength(1)
+    expect(themes[0].members).not.toContain('QCOM')
+    expect(themes[0].memberCount).toBe(3)
   })
 
   it('does NOT report a sector theme when the whole market is falling', () => {
@@ -448,5 +475,66 @@ describe('buildNarrative', () => {
       input({ themes: [], marketReturn: -0.032, marketSigmas: -2.4, breadth: 0.82 }),
     )
     expect(n.inputs).toMatchObject({ breadth: 0.82, marketSigmas: -2.4 })
+  })
+})
+
+describe('absenceSummary', () => {
+  const base = {
+    sessions: 53,
+    bigMovers: 0,
+    largestMovePct: 0,
+    largestMoveSymbol: null,
+    themesFormed: 0,
+    earningsReported: 0,
+    roundTrips: 0,
+  }
+
+  it('counts, and never characterises', () => {
+    const text = absenceSummary({
+      ...base,
+      bigMovers: 6,
+      themesFormed: 1,
+      earningsReported: 2,
+    })!
+
+    expect(text).toBe(
+      'In 53 trading sessions: 6 names moved more than 20%, 1 theme formed and 2 names reported earnings.',
+    )
+    // Every clause is a count of something already computed. No adjective can
+    // appear here, because nothing generates one.
+    expect(text).not.toMatch(/significant|notable|sharp|dramatic|volatile/i)
+  })
+
+  it('omits zero clauses rather than writing them', () => {
+    // "0 themes formed" is noise that hides the clauses that are not zero.
+    const text = absenceSummary({ ...base, bigMovers: 3 })!
+    expect(text).toBe('In 53 trading sessions: 3 names moved more than 20%.')
+    expect(text).not.toMatch(/0/)
+  })
+
+  it('falls back to the largest move when nothing cleared 20%', () => {
+    const text = absenceSummary({
+      ...base,
+      largestMovePct: -0.083,
+      largestMoveSymbol: 'INTC',
+    })!
+    expect(text).toMatch(/largest move was INTC at -8.3%/)
+  })
+
+  it('says nothing when there is nothing countable to say', () => {
+    expect(absenceSummary(base)).toBeNull()
+    expect(absenceSummary({ ...base, sessions: 0, bigMovers: 4 })).toBeNull()
+  })
+
+  it('gets singular and plural right', () => {
+    const one = absenceSummary({
+      ...base,
+      sessions: 1,
+      bigMovers: 1,
+      themesFormed: 1,
+    })!
+    expect(one).toMatch(/In 1 trading session:/)
+    expect(one).toMatch(/1 name moved/)
+    expect(one).toMatch(/1 theme formed/)
   })
 })

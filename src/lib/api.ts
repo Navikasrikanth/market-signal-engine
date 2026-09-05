@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { UnauthorizedError } from './auth'
+import { RateLimitedError, UnauthorizedError } from './auth'
 
 /**
  * Route-handler helpers.
@@ -39,16 +39,56 @@ export function ok<T>(data: T, init?: ResponseInit): NextResponse {
   return NextResponse.json(data, init)
 }
 
+/**
+ * Cross-origin write protection.
+ *
+ * SameSite=Lax already blocks a cross-site POST from carrying the session
+ * cookie, so this is belt and braces - but it states the guarantee in code
+ * rather than inheriting it from a cookie attribute that a future change to
+ * SameSite=None would silently remove. Checked on mutating verbs only, so a
+ * GET from a link is unaffected.
+ */
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
+
+function crossOriginWrite(req: Request): boolean {
+  if (SAFE_METHODS.has(req.method)) return false
+
+  const origin = req.headers.get('origin')
+  // A same-origin fetch from a browser always sends Origin on a POST. Its
+  // absence means a non-browser client (curl, a test), which the session
+  // cookie requirement already covers.
+  if (!origin) return false
+
+  const host = req.headers.get('host')
+  if (!host) return true
+
+  try {
+    return new URL(origin).host !== host
+  } catch {
+    return true
+  }
+}
+
 /** Wrap a handler so thrown errors become problem responses, never stack traces. */
 export function handler(
   fn: (req: Request, ctx: unknown) => Promise<NextResponse>,
 ) {
   return async (req: Request, ctx: unknown): Promise<NextResponse> => {
     try {
+      if (crossOriginWrite(req)) {
+        return problem(
+          403,
+          'Cross-origin request',
+          'Write requests must come from this application.',
+        )
+      }
       return await fn(req, ctx)
     } catch (e) {
       if (e instanceof UnauthorizedError) {
         return problem(401, 'Unauthorized', 'Sign in to continue.')
+      }
+      if (e instanceof RateLimitedError) {
+        return problem(429, 'Too many attempts', e.message)
       }
       if (e instanceof z.ZodError) {
         return problem(400, 'Invalid request', e.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '))

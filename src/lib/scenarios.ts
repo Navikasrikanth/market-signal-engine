@@ -1,5 +1,10 @@
 import { db } from './db'
 import { runPipeline, toEngineBars } from './pipeline'
+import {
+  matchContext,
+  contextSentence,
+  type ContextEvent,
+} from '@/engine/context'
 import { detectThemes, type ThemeMember } from '@/engine/theme'
 import { buildNarrative } from '@/engine/narrative'
 import { scoreSignals, explainContributions } from '@/engine/scorer'
@@ -106,6 +111,20 @@ export interface ReplayStep {
   narrative: { ruleId: string; text: string }
   marketReturnPct: number
   quietCount: number
+  /**
+   * What else was going on, when the curated table knows. Null is the normal
+   * outcome and is rendered as such — attaching the nearest available headline
+   * is exactly how a plausible false explanation gets made.
+   */
+  context: {
+    title: string
+    description: string
+    sentence: string
+    confidence: number
+    band: 'HIGH' | 'MEDIUM' | 'LOW'
+    source: string
+    sourceUrl: string | null
+  } | null
 }
 
 const SURFACED: Severity[] = ['CRITICAL', 'IMPORTANT', 'WATCH']
@@ -123,6 +142,63 @@ export async function replayScenario(slug: string): Promise<{
 }> {
   const scenario = SCENARIOS.find((s) => s.slug === slug)
   if (!scenario) throw new Error(`Unknown scenario: ${slug}`)
+  return replayWindow(scenario)
+}
+
+/**
+ * Replay ANY window, not only a curated one.
+ *
+ * The featured scenarios are shortcuts, not the only supported periods: they
+ * and a user-chosen date range run through exactly the same function, so
+ * nothing about the analysis is special-cased around a named event. If a
+ * preset produced a better answer than an arbitrary range, the presets would
+ * be the product rather than examples of it.
+ */
+export async function replayCustom(
+  startDate: string,
+  endDate: string,
+  symbols: string[],
+): Promise<{ scenario: ScenarioDefinition; steps: ReplayStep[] }> {
+  return replayWindow({
+    slug: 'custom',
+    name: `${startDate} to ${endDate}`,
+    description: 'A window you chose.',
+    teaches:
+      'The same pipeline the featured replays use: bars, features, detectors, scoring, themes, narrative. Nothing is special-cased around a named event.',
+    startDate,
+    endDate,
+    symbols,
+  })
+}
+
+async function replayWindow(scenario: ScenarioDefinition): Promise<{
+  scenario: ScenarioDefinition
+  steps: ReplayStep[]
+}> {
+
+  // Curated context for the window, loaded once. Sparse by design: most dates
+  // have nothing, and saying so is the point.
+  const contextRows = await db.historicalContextEvent.findMany({
+    where: {
+      eventDate: {
+        gte: new Date(`${scenario.startDate}T00:00:00Z`),
+        lte: new Date(`${scenario.endDate}T00:00:00Z`),
+      },
+    },
+  })
+  const contextEvents: ContextEvent[] = contextRows.map((r) => ({
+    id: r.id,
+    eventDate: r.eventDate.toISOString().slice(0, 10),
+    eventEndDate: r.eventEndDate?.toISOString().slice(0, 10) ?? null,
+    title: r.title,
+    description: r.description,
+    category: r.category as ContextEvent['category'],
+    scope: r.scope as ContextEvent['scope'],
+    importance: r.importance as ContextEvent['importance'],
+    source: r.source,
+    sourceUrl: r.sourceUrl,
+    sectors: r.sectors,
+  }))
 
   const instruments = await db.instrument.findMany({
     where: { symbol: { in: [...scenario.symbols, MARKET_BENCHMARK] } },
@@ -261,6 +337,31 @@ export async function replayScenario(slug: string): Promise<{
       notableCount: items.length,
     })
 
+    // What else was happening.
+    //
+    // A detected theme settles the question: the engine has already concluded
+    // the move is specific to a sector rather than to the market, and that
+    // conclusion should govern which context is eligible. Without this the
+    // flagship case got it exactly backwards - on the day semiconductors led
+    // the market down, breadth and a 1.5-sigma benchmark move looked
+    // "market-wide", so a SECTOR-scoped context event was ruled out on the one
+    // date it described best, and matched the quieter day after instead.
+    const themeSector = themes[0]?.scopeKey ?? null
+    const marketWide =
+      themeSector === null &&
+      Math.abs(marketSigmas) > 1 &&
+      scenario.symbols.length > 0 &&
+      items.length / scenario.symbols.length > 0.5
+
+    const match = matchContext(
+      {
+        date,
+        marketWide,
+        sector: themeSector ?? (marketWide ? null : (items[0]?.sector ?? null)),
+      },
+      contextEvents,
+    )
+
     steps.push({
       date,
       items: items.slice(0, 5),
@@ -277,6 +378,17 @@ export async function replayScenario(slug: string): Promise<{
         direction: t.direction,
       })),
       narrative: { ruleId: narrative.ruleId, text: narrative.text },
+      context: match
+        ? {
+            title: match.event.title,
+            description: match.event.description,
+            sentence: contextSentence(match),
+            confidence: match.confidence,
+            band: match.band,
+            source: match.event.source,
+            sourceUrl: match.event.sourceUrl,
+          }
+        : null,
       marketReturnPct,
       quietCount: scenario.symbols.length - items.length,
     })

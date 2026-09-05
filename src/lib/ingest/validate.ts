@@ -46,15 +46,26 @@ const MAX_DAILY_MOVE = 0.6
  */
 const MAX_SESSION_GAP_DAYS = 4
 
-export function validateBars(bars: RawBar[]): ValidationResult {
+/**
+ * @param anchor The last bar already stored for this instrument, when there is
+ * one. Without it the FIRST bar of every fetch escapes the move check
+ * entirely, because there is nothing in the batch to compare it against - so a
+ * decimal-shift glitch on the first row of an incremental fetch was accepted
+ * silently. Incremental fetches are now the normal case, which made that blind
+ * spot the common path rather than an edge.
+ */
+export function validateBars(
+  bars: RawBar[],
+  anchor?: { date: string; close: number } | null,
+): ValidationResult {
   const valid: RawBar[] = []
   const rejected: ValidationReject[] = []
 
   const seenDates = new Set<string>()
   const sorted = [...bars].sort((a, b) => a.date.localeCompare(b.date))
 
-  let previousClose: number | null = null
-  let previousDate: string | null = null
+  let previousClose: number | null = anchor?.close ?? null
+  let previousDate: string | null = anchor?.date ?? null
 
   for (const bar of sorted) {
     const reason = firstProblem(bar, seenDates)

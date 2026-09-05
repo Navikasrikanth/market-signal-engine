@@ -7,6 +7,7 @@ import { runPipeline, toEngineBars, type InstrumentSeries } from '../src/lib/pip
 import type { InstrumentDay, PipelineEvent } from '../src/lib/pipeline'
 import { THRESHOLDS } from '../src/engine/detectors'
 import { FAMILY_WEIGHTS } from '../src/engine/scorer'
+import { followThroughRate } from '../src/engine/followthrough'
 import { ENGINE_VERSION, SCORER_VERSION, type Bar, type Severity } from '../src/engine/types'
 import { EQUITIES, MARKET_BENCHMARK } from '../src/lib/universe'
 
@@ -92,52 +93,6 @@ function monthsSpanned(bars: Bar[], from: string): number {
   const start = new Date(`${inWindow[0].date}T00:00:00Z`).getTime()
   const end = new Date(`${inWindow[inWindow.length - 1].date}T00:00:00Z`).getTime()
   return (end - start) / (1000 * 60 * 60 * 24 * 30.44)
-}
-
-/**
- * Precision proxy: of the events we would have surfaced, how many were followed
- * by a move large enough to matter?
- *
- * This is a proxy, not ground truth. Nobody labelled these events, and "did the
- * user care?" is unmeasurable before the product has users. What it does test
- * is whether an alert carried information about the near future rather than
- * being a restatement of noise that had already passed.
- */
-function followThroughRate(
-  events: PipelineEvent[],
-  bars: Bar[],
-  horizon = 3,
-  sigmaThreshold = 1.5,
-): { checked: number; followed: number } {
-  const byDate = new Map(bars.map((b, i) => [b.date, i]))
-  let checked = 0
-  let followed = 0
-
-  for (const e of events) {
-    const i = byDate.get(e.marketTime)
-    if (i === undefined || i + horizon >= bars.length) continue
-
-    const window = bars.slice(Math.max(0, i - 20), i + 1)
-    const rets: number[] = []
-    for (let k = 1; k < window.length; k++) {
-      rets.push(Math.log(window[k].closeAdj / window[k - 1].closeAdj))
-    }
-    const mean = rets.reduce((a, b) => a + b, 0) / Math.max(1, rets.length)
-    const variance =
-      rets.reduce((a, b) => a + (b - mean) ** 2, 0) / Math.max(1, rets.length - 1)
-    const sigma = Math.sqrt(variance)
-    if (!(sigma > 0)) continue
-
-    const forward = Math.log(
-      bars[i + horizon].closeAdj / bars[i].closeAdj,
-    )
-    checked++
-    if (Math.abs(forward) / (sigma * Math.sqrt(horizon)) >= sigmaThreshold) {
-      followed++
-    }
-  }
-
-  return { checked, followed }
 }
 
 function pct(n: number, d: number): string {
