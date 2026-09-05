@@ -7,6 +7,7 @@ import { StoryBlock } from '@/components/StoryBlock'
 import { ThemeCard } from '@/components/ThemeCard'
 import { AttentionBudget } from '@/components/AttentionBudget'
 import { MarkAllSeen } from '@/components/MarkAllSeen'
+import { TopNav } from '@/components/TopNav'
 
 export const dynamic = 'force-dynamic'
 
@@ -102,30 +103,7 @@ function Header({
 
   return (
     <header>
-      <div className="flex items-baseline justify-between gap-4">
-        <span className="font-mono text-[11px] tracking-[0.2em] text-[color:var(--accent-ink)]">
-          SITREP
-        </span>
-        <span className="flex items-center gap-4 font-mono text-[10px] tracking-wide text-[color:var(--ink-3)]">
-          <span>
-            {sitrep.asOf
-              ? `data as of ${new Date(sitrep.asOf).toISOString().slice(0, 10)}`
-              : 'no data yet'}
-          </span>
-          <Link
-            href="/watchlist"
-            className="underline decoration-dotted underline-offset-4 hover:text-[color:var(--accent-ink)]"
-          >
-            manage watchlist
-          </Link>
-          <Link
-            href="/performance"
-            className="underline decoration-dotted underline-offset-4 hover:text-[color:var(--accent-ink)]"
-          >
-            track record
-          </Link>
-        </span>
-      </div>
+      <TopNav current="/" asOf={sitrep.asOf} />
 
       <h1 className="mt-6 text-2xl font-semibold tracking-tight">
         Good morning, {sitrep.displayName}.

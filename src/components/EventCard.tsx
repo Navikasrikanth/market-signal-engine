@@ -61,6 +61,9 @@ export function EventCard({
     act('/api/watch-state/mark-seen', {
       symbols: [item.symbol],
       eventIds: item.eventIds,
+      // Where it sat when cleared, so the next brief can say whether it has
+      // climbed or fallen in your attention since.
+      ranks: { [item.symbol]: item.rank },
     })
 
   /**
@@ -91,6 +94,28 @@ export function EventCard({
               {item.symbol}
             </h3>
             <SeverityChip severity={item.severity} />
+            {item.framing && (
+              <span
+                className="rounded-sm border px-1.5 py-0.5 font-mono text-[10px] tracking-wider"
+                style={{
+                  borderColor:
+                    item.framing.tone === 'favourable'
+                      ? 'var(--up)'
+                      : item.framing.tone === 'adverse'
+                        ? 'var(--down)'
+                        : 'var(--border-strong)',
+                  color:
+                    item.framing.tone === 'neutral'
+                      ? 'var(--ink-3)'
+                      : item.framing.tone === 'favourable'
+                        ? 'var(--up)'
+                        : 'var(--down)',
+                }}
+              >
+                {item.framing.label}
+              </span>
+            )}
+            <RankChurn rank={item.rank} previous={item.previousRank} />
             {item.priority !== 'NORMAL' && (
               <span className="rounded-sm border border-[color:var(--border-strong)] px-1.5 py-0.5 font-mono text-[10px] tracking-wider text-[color:var(--ink-3)]">
                 {item.priority} PRIORITY
@@ -143,6 +168,22 @@ export function EventCard({
           <Sparkline points={item.sparkline} />
         </span>
       </div>
+
+      {item.framing && (
+        <p
+          className="mt-2 text-sm leading-snug"
+          style={{
+            color:
+              item.framing.tone === 'favourable'
+                ? 'var(--up)'
+                : item.framing.tone === 'adverse'
+                  ? 'var(--down)'
+                  : 'var(--ink-2)',
+          }}
+        >
+          {item.framing.text}
+        </p>
+      )}
 
       <Path peak={item.peak} trough={item.trough} />
 
@@ -277,5 +318,38 @@ function Path({
       </span>{' '}
       {above ? 'above' : 'below'} where it sits now.
     </p>
+  )
+}
+
+/**
+ * Has this climbed or fallen in your attention since you last cleared it?
+ *
+ * Nothing else in the product answers that. The score says how much this
+ * matters; the change in RANK says how much it matters relative to everything
+ * else you watch, which is the comparison a person actually makes.
+ *
+ * Silent unless it moved. "Still 3rd" is not news.
+ */
+function RankChurn({
+  rank,
+  previous,
+}: {
+  rank: number
+  previous: number | null
+}) {
+  if (previous === null || previous === rank) return null
+
+  const climbed = rank < previous
+  return (
+    <span
+      className="rounded-sm border px-1.5 py-0.5 font-mono text-[10px] tracking-wider"
+      style={{
+        borderColor: 'var(--border-strong)',
+        color: climbed ? 'var(--accent-ink)' : 'var(--ink-3)',
+      }}
+      title={`Was ranked ${previous} when you last cleared it`}
+    >
+      {climbed ? '▲' : '▼'} {previous} → {rank}
+    </span>
   )
 }

@@ -42,9 +42,11 @@ export function AccountControls({ budget }: { budget: number }) {
     }
   }
 
-  async function signOut(everywhere: boolean) {
-    const url = everywhere ? '/api/auth/logout-all' : '/api/auth/logout'
-    if (await post(url)) {
+  async function signOutEverywhere() {
+    if (await post('/api/auth/logout-all')) {
+      // Refresh before navigating: `push` alone can serve an RSC payload
+      // rendered while the session still existed.
+      router.refresh()
       startTransition(() => router.push('/login'))
     }
   }
@@ -78,17 +80,16 @@ export function AccountControls({ budget }: { budget: number }) {
         already found.
       </p>
 
+      {/*
+        Ordinary sign-out lives in the header, on every page. Only the heavier
+        action is here: revoking every session everywhere is a deliberate,
+        occasional thing, and putting it a click from "sign out" invites the
+        wrong one.
+      */}
       <div className="mt-4 flex flex-wrap gap-2 border-t border-[color:var(--border)] pt-3">
         <button
           type="button"
-          onClick={() => void signOut(false)}
-          className="rounded-md border border-[color:var(--border-strong)] px-2.5 py-1 font-mono text-[11px] tracking-wide text-[color:var(--ink-2)] hover:border-[color:var(--accent)] hover:text-[color:var(--accent-ink)]"
-        >
-          Sign out
-        </button>
-        <button
-          type="button"
-          onClick={() => void signOut(true)}
+          onClick={() => void signOutEverywhere()}
           title="Revoke every session on every device"
           aria-label="Sign out everywhere"
           className="rounded-md border border-[color:var(--border-strong)] px-2.5 py-1 font-mono text-[11px] tracking-wide text-[color:var(--ink-3)] hover:border-[color:var(--down)] hover:text-[color:var(--down)]"

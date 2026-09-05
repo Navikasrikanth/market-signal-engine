@@ -30,7 +30,7 @@ Open http://localhost:3000 and sign in as `demo@sitrep.local` / `sitrep-demo-202
 | `/admin/pipeline` | Ingest runs, data quality, engine version |
 
 ```bash
-npm test              # 216 unit tests, engine + ingestion
+npm test              # 225 unit tests, engine + ingestion
 npm run test:e2e      # 4 Playwright journeys through a real browser
 npm run calibrate     # replay history, rewrite docs/calibration.md
 npm run verify        # 69 checks: requirements, auth, ingestion, cache
@@ -130,6 +130,34 @@ For a product whose thesis is explainability, an unsourced number is a contradic
 | Historical context | a **curated** table, every row carrying a source |
 | Signals and scores | the deterministic engine, version-stamped |
 | Ranking | SITREP scoring, under the user's own priority and intent |
+
+---
+
+## Three views, three questions
+
+The same data, three ways, because "what changed", "what is going on" and "what does this mean for me" are not the same question and one screen answering all three answers none well.
+
+| view | question | opinion applied |
+|---|---|---|
+| `/` **brief** | what changed since I last looked? | ranked, and cut to the attention budget |
+| `/market` **everything** | what is going on? | ranked, **nothing hidden** — the budget's cut is shown as dimming, not omission |
+| `/positions` | what does this mean for me? | grouped by declared intent, every move reframed |
+
+**Position-aware framing** is the one that changes what the product is. `intent` was captured from the first version and only ever moved a score multiplier — but a move does not mean one thing:
+
+```
+HOLDING          "You hold this. It is worth 8.0% less than when you last looked."     adverse
+CONSIDERING_BUY  "You were considering buying. It is 8.0% cheaper than when you        favourable
+                  last looked."
+HEDGE            "This is a hedge. It lost 6.0% — cover costs something in a calm      neutral
+                  market, and that is the trade."
+```
+
+Same number. Opposite news. A falling hedge is neither good nor bad, and calling it either would be wrong.
+
+**No position size, no cost basis, no P&L, ever.** The product never asks what you own and must not imply it knows. Intent is a declaration, not a brokerage link, and every sentence stays true without knowing how much — asserted by a test that scans every rendered row.
+
+**Rank churn** appears on the card: *▲ 4 → 1*. Recorded when you acknowledge a brief, never when you read one — reading must not write, because that rule is what makes a glance on a phone safe.
 
 ---
 
@@ -381,7 +409,7 @@ Run `npx tsx scripts/verify-auth.ts` — 12 checks against real Postgres, includ
 
 ## Testing
 
-216 unit tests, 10 browser journeys, and 69 checks against real Postgres and Redis across four verification suites — requirements, auth, ingestion and cache.
+225 unit tests, 12 browser journeys, and 69 checks against real Postgres and Redis across four verification suites — requirements, auth, ingestion and cache.
 
 Every detector has a **firing fixture and a must-not-fire fixture** — a detector that only ever fires is indistinguishable from a broken one, and on a product whose promise is filtering noise, false positives are the expensive failure.
 
@@ -395,7 +423,7 @@ Several tests exist specifically to pin down bugs that were written and then cau
 - a 2:1 split deliberately passes the validator — documented as a limitation rather than faked
 
 The browser suite is deliberately thin: four journeys covering the three
-minimums plus replay. Broad UI coverage of a product whose logic already has 216
+minimums plus replay. Broad UI coverage of a product whose logic already has 225
 unit tests would be slow to run, slower to maintain, and would mostly re-test
 React. It did earn its place immediately though — it caught the acknowledge
 button hiding a card optimistically without ever re-reading the brief, so the

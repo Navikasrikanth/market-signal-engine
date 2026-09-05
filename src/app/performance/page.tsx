@@ -8,6 +8,7 @@ import {
   FOLLOW_SIGMA,
   MIN_SCORECARD_SAMPLE,
 } from '@/engine/followthrough'
+import { TopNav } from '@/components/TopNav'
 
 export const dynamic = 'force-dynamic'
 
@@ -51,17 +52,7 @@ export default async function PerformancePage() {
 
   return (
     <main className="mx-auto w-full max-w-3xl px-5 py-10">
-      <div className="flex items-baseline justify-between gap-4">
-        <span className="font-mono text-[11px] tracking-[0.2em] text-[color:var(--accent-ink)]">
-          SITREP · PERFORMANCE
-        </span>
-        <Link
-          href="/"
-          className="font-mono text-[10px] tracking-wide text-[color:var(--ink-3)] underline decoration-dotted underline-offset-4 hover:text-[color:var(--accent-ink)]"
-        >
-          back to brief
-        </Link>
-      </div>
+      <TopNav current="/performance" />
 
       <h1 className="mt-6 text-2xl font-semibold tracking-tight">
         Does this thing actually work?

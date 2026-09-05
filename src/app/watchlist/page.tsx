@@ -5,6 +5,7 @@ import { db } from '@/lib/db'
 import { WatchlistManager } from '@/components/WatchlistManager'
 import { AccountControls } from '@/components/AccountControls'
 import { DEFAULT_ATTENTION_BUDGET } from '@/lib/sitrep'
+import { TopNav } from '@/components/TopNav'
 
 export const dynamic = 'force-dynamic'
 
@@ -50,17 +51,7 @@ export default async function WatchlistPage() {
 
   return (
     <main className="mx-auto w-full max-w-3xl px-5 py-10">
-      <div className="flex items-baseline justify-between gap-4">
-        <span className="font-mono text-[11px] tracking-[0.2em] text-[color:var(--accent-ink)]">
-          SITREP
-        </span>
-        <Link
-          href="/"
-          className="font-mono text-[11px] tracking-wide text-[color:var(--ink-3)] underline decoration-dotted underline-offset-4 hover:text-[color:var(--accent-ink)]"
-        >
-          back to brief
-        </Link>
-      </div>
+      <TopNav current="/watchlist" />
 
       <h1 className="mt-6 text-2xl font-semibold tracking-tight">
         Manage your watchlist

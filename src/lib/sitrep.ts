@@ -20,6 +20,7 @@ import type {
   Signal,
 } from '@/engine/types'
 import { MARKET_BENCHMARK } from './universe'
+import { frameForPosition, type PositionFraming } from '@/engine/position'
 import { nyDate, sessionsBehind, tradingDaysBetween } from './market-calendar'
 import { cached, invalidateUser, TTL } from './cache'
 import { buildChronology, findCameAndWent } from './briefing'
@@ -84,6 +85,14 @@ export interface SitrepItem {
    * having been 19% higher three weeks ago and given it all back" are the same
    * two numbers describing completely different fortnights.
    */
+  /**
+   * Where this name sat in the brief the last time it was acknowledged, and
+   * where it sits now. Null when it has never been cleared.
+   */
+  previousRank: number | null
+  rank: number
+  /** What the move MEANS for the position the user declared. */
+  framing: PositionFraming | null
   peak: { close: number; date: string; fromNowPct: number } | null
   trough: { close: number; date: string; fromNowPct: number } | null
   lastClose: number
@@ -113,6 +122,15 @@ export interface SitrepResult {
   withinNormalRange: number
   /** Names the user actively silenced. Never folded into "normal range". */
   snoozedCount: number
+  /**
+   * Every watched name, ranked but NOT cut to the attention budget.
+   *
+   * The brief has an opinion; this is the same market without it. Both views
+   * exist because "what deserves my attention" and "what is going on" are
+   * different questions, and answering the first should not make the second
+   * unavailable.
+   */
+  all: SitrepItem[]
   /**
    * What happened, in order, while the user was away.
    *
@@ -402,6 +420,14 @@ async function assembleSitrep(userId: string): Promise<SitrepResult> {
       eventIds: instrumentEvents.map((e) => e.id),
       windowReturnPct: window.returnPct,
       sigmas: window.sigmas,
+      previousRank:
+        typeof (cursor?.lastSeenSnap as { rank?: number } | null)?.rank ===
+        'number'
+          ? ((cursor!.lastSeenSnap as { rank: number }).rank)
+          : null,
+      // Filled in after ranking, which is the only point at which it is known.
+      rank: 0,
+      framing: null,
       peak: window.peak,
       trough: window.trough,
       lastClose: window.lastClose,
@@ -422,6 +448,19 @@ async function assembleSitrep(userId: string): Promise<SitrepResult> {
     .sort((a, b) => b.attentionScore - a.attentionScore)
 
   const shown = surfaced.slice(0, attentionBudget)
+
+  // Rank is a property of the assembled brief, not of an instrument, so it can
+  // only be assigned once everything has been scored and sorted.
+  surfaced.forEach((item, i) => {
+    item.rank = i + 1
+    item.framing = frameForPosition({
+      intent: item.intent,
+      returnPct: item.windowReturnPct,
+      sigmas: item.sigmas,
+      peakFromNowPct: item.peak?.fromNowPct ?? null,
+      troughFromNowPct: item.trough?.fromNowPct ?? null,
+    })
+  })
 
   // Names that genuinely did nothing. Anything the engine flagged but the
   // attention budget cut is NOT "within normal range" - saying so would
@@ -603,6 +642,7 @@ async function assembleSitrep(userId: string): Promise<SitrepResult> {
     budget,
     withinNormalRange,
     snoozedCount: snoozedInstruments.size,
+    all: surfaced,
     chronology,
     cameAndWent,
     absenceSummary: summary,
@@ -789,6 +829,7 @@ function emptyResult(displayName: string, attentionBudget: number): SitrepResult
     budget: { CRITICAL: 0, IMPORTANT: 0, WATCH: 0, INFO: 0, NOISE: 0 },
     withinNormalRange: 0,
     snoozedCount: 0,
+    all: [],
     chronology: [],
     cameAndWent: [],
     absenceSummary: null,
@@ -819,6 +860,15 @@ export async function markSeen(
   userId: string,
   instrumentIds: string[],
   eventIds: string[] = [],
+  /**
+   * Where each instrument sat in the brief at the moment it was acknowledged.
+   *
+   * Recorded here rather than when the brief is READ, because reading must
+   * never write - that rule is what makes a glance on a phone safe. An
+   * explicit acknowledgement is a different thing, and it gives "last time"
+   * a defined meaning: the last brief you actually cleared.
+   */
+  ranks: Record<string, number> = {},
 ): Promise<{ moved: number }> {
   const now = new Date()
   let moved = 0
@@ -845,6 +895,7 @@ export async function markSeen(
         lastSeenSnap: {
           date: snapshot?.barDate.toISOString().slice(0, 10) ?? null,
           close: snapshot ? Number(snapshot.closeAdj) : null,
+          rank: ranks[instrumentId] ?? null,
         },
         cursorVersion: BigInt(1),
       },
@@ -853,6 +904,7 @@ export async function markSeen(
         lastSeenSnap: {
           date: snapshot?.barDate.toISOString().slice(0, 10) ?? null,
           close: snapshot ? Number(snapshot.closeAdj) : null,
+          rank: ranks[instrumentId] ?? null,
         },
         cursorVersion: { increment: BigInt(1) },
       },

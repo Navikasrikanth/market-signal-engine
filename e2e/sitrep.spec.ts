@@ -113,7 +113,7 @@ test('snoozing defers an event without advancing the cursor', async ({
 
 test('the watchlist can be managed', async ({ page }) => {
   await signIn(page)
-  await page.getByRole('link', { name: 'manage watchlist' }).click()
+  await page.getByRole('link', { name: 'watchlist', exact: true }).click()
 
   await expect(page.getByRole('heading', { name: 'Manage your watchlist' })).toBeVisible()
 
@@ -291,7 +291,7 @@ test('the attention budget is adjustable, and signing out is possible', async ({
   await signIn(page)
   const before = await page.locator('article').count()
 
-  await page.getByRole('link', { name: 'manage watchlist' }).click()
+  await page.getByRole('link', { name: 'watchlist', exact: true }).click()
 
   // The budget was read from user settings from the start while being settable
   // only by editing the database.
@@ -311,12 +311,65 @@ test('the attention budget is adjustable, and signing out is possible', async ({
     page.locator('select').last().selectOption('5'),
   ])
 
-  await page.getByRole('button', { name: 'Sign out', exact: true }).click()
+  await page.getByRole('button', { name: 'sign out', exact: true }).click()
   await expect(page).toHaveURL(/\/login/)
 
   // And that the session is genuinely gone, not just navigated away from.
   await page.goto('/')
   await expect(page).toHaveURL(/\/login/)
+})
+
+test('three views answer three different questions', async ({ page }) => {
+  await signIn(page)
+
+  // The brief has an opinion: it cuts to the attention budget.
+  const briefCount = await page.locator('article').count()
+  expect(briefCount).toBeLessThanOrEqual(5)
+
+  // "Everything" is the same market with the opinion removed, so it must show
+  // at least as much - a view that filtered too would not be a second view.
+  await page.getByRole('link', { name: 'everything' }).click()
+  await expect(
+    page.getByRole('heading', { name: 'Everything at once' }),
+  ).toBeVisible()
+  const rows = page.locator('tbody tr')
+  expect(await rows.count()).toBeGreaterThanOrEqual(briefCount)
+
+  // Positions reframes rather than re-ranks.
+  await page.getByRole('link', { name: 'positions' }).click()
+  await expect(
+    page.getByRole('heading', { name: 'What it means for you' }),
+  ).toBeVisible()
+
+  // The claim the page exists to make, and the one it must never break: no
+  // position size, cost basis or profit in any ROW.
+  //
+  // Scoped to the list rather than the page, because the page's own footer
+  // says those words in order to promise their absence - asserting over the
+  // whole document would fail on the disclaimer explaining the rule.
+  const positionRows = page.locator('main li')
+  const count = await positionRows.count()
+  for (let i = 0; i < count; i++) {
+    const text = await positionRows.nth(i).innerText()
+    expect(text).not.toMatch(/cost basis|P&L|profit|shares|units/i)
+  }
+})
+
+test('a holding and a considered buy read the same move oppositely', async ({
+  page,
+}) => {
+  await signIn(page)
+  await page.goto('/positions')
+
+  // Whatever the demo state, any framing shown must be position-aware rather
+  // than a restatement of the price move.
+  const text = await page.locator('main').innerText()
+  if (/HOLDING/.test(text)) {
+    expect(text).toMatch(/You hold this\./)
+  }
+  if (/CONSIDERING/.test(text)) {
+    expect(text).toMatch(/considering buying/)
+  }
 })
 
 test('the pipeline page reports data quality and queue state', async ({
