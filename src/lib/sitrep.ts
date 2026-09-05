@@ -22,6 +22,7 @@ import type {
 import { MARKET_BENCHMARK } from './universe'
 import { frameForPosition, type PositionFraming } from '@/engine/position'
 import { nyDate, sessionsBehind, tradingDaysBetween } from './market-calendar'
+import { fixtureMode } from './sources/fixture'
 import { cached, invalidateUser, TTL } from './cache'
 import { buildChronology, findCameAndWent } from './briefing'
 import { previousSignIn } from './auth'
@@ -1063,7 +1064,16 @@ async function checkFreshness(
   })
 
   const latestDate = latest?.barDate.toISOString().slice(0, 10) ?? null
-  const behind = sessionsBehind(latestDate, now)
+
+  // Fixture mode is not "behind". It is a fixed dataset by design.
+  //
+  // The committed history ends on a particular day and no feed will ever
+  // extend it, so measuring it against the live calendar made the default
+  // clone-and-run configuration show a permanent warning that grew by one
+  // every day. A warning that always fires is one users learn to ignore -
+  // which is precisely the failure the calendar exists to prevent, arrived at
+  // from the other direction.
+  const behind = fixtureMode() ? 0 : sessionsBehind(latestDate, now)
 
   // Holes are counted across the watched names only: a gap in an instrument
   // the user does not watch is an ops problem, not something to put on their

@@ -9,6 +9,7 @@ import {
   MIN_SCORECARD_SAMPLE,
 } from '@/engine/followthrough'
 import { TopNav } from '@/components/TopNav'
+import { Caveat } from '@/components/Caveat'
 
 export const dynamic = 'force-dynamic'
 
@@ -152,31 +153,25 @@ export default async function PerformancePage() {
             </p>
           )}
 
-          <section className="mt-8 rounded-lg border border-[color:var(--border)] bg-[color:var(--surface)] p-4">
-            <h2 className="mb-2 font-mono text-[10px] tracking-wider text-[color:var(--ink-3)]">
-              WHAT THIS IS NOT
-            </h2>
-            <p className="text-xs leading-relaxed text-[color:var(--ink-2)]">
-              This is a <strong>proxy</strong>, not ground truth. Nobody
-              labelled these events, and &ldquo;did the user care?&rdquo; is
-              unmeasurable before the product has users. It tests one thing:
-              whether an alert carried information about the near future rather
-              than restating noise that had already passed. A rate below{' '}
-              {MIN_SCORECARD_SAMPLE} observations is not shown at all — a 100%
-              hit rate on three events is not a hit rate.{' '}
-              <code>earnings_upcoming</code> is absent because the free data
-              tier serves forward-looking dates only, so it cannot be tested
-              historically.
-            </p>
+          <Caveat summary="WHAT THIS IS NOT — a proxy, not ground truth">
+            Nobody labelled these events, and &ldquo;did the user care?&rdquo;
+            is unmeasurable before the product has users. This tests one thing:
+            whether an alert carried information about the near future rather
+            than restating noise that had already passed. A rate below{' '}
+            {MIN_SCORECARD_SAMPLE} observations is not shown at all — a 100%
+            hit rate on three events is not a hit rate.{' '}
+            <code>earnings_upcoming</code> is absent because the free data tier
+            serves forward-looking dates only, so it cannot be tested
+            historically.
             {window && (
-              <p className="mt-3 font-mono text-[10px] tracking-wide text-[color:var(--ink-3)]">
+              <span className="mt-2 block font-mono text-[10px] tracking-wide">
                 engine {window.engineV} ·{' '}
                 {window.windowStart.toISOString().slice(0, 10)} to{' '}
                 {window.windowEnd.toISOString().slice(0, 10)} · refreshed{' '}
                 {window.computedAt.toISOString().slice(0, 16).replace('T', ' ')}
-              </p>
+              </span>
             )}
-          </section>
+          </Caveat>
         </>
       )}
     </main>

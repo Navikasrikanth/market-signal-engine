@@ -3,6 +3,7 @@ import { currentUser } from '@/lib/auth'
 import { buildSitrep } from '@/lib/sitrep'
 import { TopNav } from '@/components/TopNav'
 import { SeverityChip, Change, Sparkline } from '@/components/primitives'
+import { Caveat } from '@/components/Caveat'
 
 export const dynamic = 'force-dynamic'
 
@@ -107,11 +108,11 @@ export default async function MarketPage() {
         </section>
       )}
 
-      <p className="mt-4 text-xs leading-relaxed text-[color:var(--ink-3)]">
-        Rows below rank {sitrep.attentionBudget} are dimmed: those are the ones
-        your brief held back. Nothing here is extra analysis — it is the same
-        scores, shown without the cut.
-      </p>
+      <Caveat summary={`Dimmed rows are the ${Math.max(0, sitrep.all.length - sitrep.attentionBudget)} your brief held back`}>
+        Nothing on this page is extra analysis — it is the same scores your
+        brief used, shown without the cut. A filter you cannot see past is one
+        you have to trust blindly.
+      </Caveat>
     </main>
   )
 }

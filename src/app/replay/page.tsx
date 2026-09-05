@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { currentUser } from '@/lib/auth'
 import { replayCustom, replayScenario, SCENARIOS } from '@/lib/scenarios'
 import { CustomRange } from '@/components/CustomRange'
+import { Caveat } from '@/components/Caveat'
 import { tradingDaysBetween } from '@/lib/market-calendar'
 import { ReplayPlayer } from '@/components/ReplayPlayer'
 import { TopNav } from '@/components/TopNav'
@@ -66,13 +67,12 @@ export default async function ReplayPage({ searchParams }: PageProps<'/replay'>)
         lookahead, even though the rest of the series is sitting in the database.
       </p>
 
-      <p className="mt-2 max-w-prose text-xs leading-relaxed text-[color:var(--ink-3)]">
-        Replay is deliberately DAILY. Fifteen-minute bars are kept for thirty
-        days to time recent moves within a session; reconstructing 2020 at that
-        resolution is not possible on free data, so historical windows are not
-        pretended to have it. Headlines are absent for the same reason — the
-        news tier retains about two days.
-      </p>
+      <Caveat summary="Replay is deliberately daily, and has no headlines">
+        Fifteen-minute bars are kept for thirty days to time recent moves within
+        a session; reconstructing 2020 at that resolution is not possible on
+        free data, so historical windows are not pretended to have it. Headlines
+        are absent for the same reason — the news tier retains about two days.
+      </Caveat>
 
       <nav className="mt-6 flex flex-wrap items-center gap-2">
         <span className="font-mono text-[10px] tracking-wider text-[color:var(--ink-3)]">

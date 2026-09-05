@@ -5,6 +5,7 @@ import { buildSitrep, type SitrepItem } from '@/lib/sitrep'
 import { TopNav } from '@/components/TopNav'
 import { Change, Sparkline } from '@/components/primitives'
 import { INTENT_LABEL } from '@/engine/position'
+import { Caveat } from '@/components/Caveat'
 import type { Intent } from '@/engine/types'
 
 export const dynamic = 'force-dynamic'
@@ -101,11 +102,13 @@ export default async function PositionsPage() {
         </div>
       )}
 
-      <p className="mt-8 text-xs leading-relaxed text-[color:var(--ink-3)]">
-        No position size, cost basis or profit appears anywhere here, and none
-        is stored. Intent is something you declared — it changes how a move is
-        described, never what the engine measured.
-      </p>
+      <div className="mt-8">
+        <Caveat summary="No position size, cost basis or profit — anywhere, ever">
+          None is stored and none is asked for. Intent is something you
+          declared, not a brokerage link: it changes how a move is described,
+          never what the engine measured.
+        </Caveat>
+      </div>
     </main>
   )
 }
