@@ -56,11 +56,36 @@ async function main() {
     INTC: 'LOW',
     ADBE: 'LOW',
   }
-  const intents: Record<string, 'CONSIDERING_BUY' | 'HOLDING'> = {
+  // Enough stated intent that the positions view has something to say.
+  //
+  // Four names out of seventeen left the page nearly empty, which made a
+  // feature that works look like one that does not. A realistic user declares
+  // an intent for most of what they bother to watch - and the mix has to
+  // include a hedge and a thematic holding, because those two are where the
+  // framing differs most from a plain up/down reading.
+  const intents: Record<
+    string,
+    'CONSIDERING_BUY' | 'HOLDING' | 'HEDGE' | 'THEMATIC'
+  > = {
     NVDA: 'HOLDING',
-    AMD: 'CONSIDERING_BUY',
     AAPL: 'HOLDING',
+    MSFT: 'HOLDING',
+    AVGO: 'HOLDING',
+    GOOGL: 'HOLDING',
+    AMD: 'CONSIDERING_BUY',
     TSLA: 'CONSIDERING_BUY',
+    INTC: 'CONSIDERING_BUY',
+    MU: 'CONSIDERING_BUY',
+    // No HEDGE here, deliberately.
+    //
+    // Nothing in this universe is one. The sector ETFs are used as regression
+    // proxies rather than watchable instruments, and there is no inverse or
+    // defensive holding among the equities - so labelling one a hedge would be
+    // a demo that lies about what the data is. The framing exists and is
+    // unit-tested; it simply has nothing honest to attach to here.
+    PLTR: 'THEMATIC',
+    CRM: 'THEMATIC',
+    NFLX: 'THEMATIC',
   }
 
   for (const item of watchlist.items) {

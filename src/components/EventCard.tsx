@@ -270,14 +270,16 @@ function Coverage({ items }: { items: SitrepItem['coverage'] }) {
 /**
  * Where it went while you were not looking.
  *
- * The card already shows where the price started and where it ended. Between
- * those two numbers is everything that actually happened, and a user who was
- * away for ten weeks missed all of it: a name that is up 5% today may have
- * been up 25% and given it back, which is a different thing to know than the
- * 5%.
+ * The card shows where the price started and where it ended. Between those two
+ * numbers is everything that actually happened, and someone away for ten weeks
+ * missed all of it.
  *
- * Only rendered when the extreme was not today. A peak that is the current
- * price is not a path, it is the price.
+ * The test for "worth saying" is against the BASELINE, not against today. A
+ * name up 76% will always have been far lower at some point - that is
+ * arithmetic, not information, and reporting it made every card say the same
+ * thing. What is worth saying is that the price went somewhere the endpoints
+ * do not imply: below where you left it before recovering, or above where it
+ * is now before easing back.
  */
 function Path({
   peak,
@@ -286,37 +288,59 @@ function Path({
   peak: SitrepItem['peak']
   trough: SitrepItem['trough']
 }) {
-  if (!peak && !trough) return null
+  /** Went ABOVE today and came back down. */
+  const gaveBack =
+    peak && peak.fromNowPct >= 0.05
+      ? {
+          word: 'REACHED',
+          close: peak.close,
+          date: peak.date,
+          amount: peak.fromNowPct,
+          tail: 'higher before easing back',
+          up: true,
+        }
+      : null
 
-  // One line, and only the side that is interesting: a name near its window
-  // high does not need to be told it also had a low.
+  /** Went BELOW where you last saw it, and recovered. */
+  const dipped =
+    trough && trough.fromBaselinePct <= -0.05
+      ? {
+          word: 'FELL TO',
+          close: trough.close,
+          date: trough.date,
+          amount: trough.fromBaselinePct,
+          tail: 'below where you last saw it, then recovered',
+          up: false,
+        }
+      : null
+
+  // At most one line. Whichever excursion was larger is the one worth the
+  // reader's attention; both would be a chart, and the card already has one.
   const notable =
-    peak && trough
-      ? Math.abs(peak.fromNowPct) >= Math.abs(trough.fromNowPct)
-        ? peak
-        : trough
-      : (peak ?? trough)!
+    gaveBack && dipped
+      ? Math.abs(gaveBack.amount) >= Math.abs(dipped.amount)
+        ? gaveBack
+        : dipped
+      : (gaveBack ?? dipped)
 
-  const above = notable.fromNowPct > 0
-  if (Math.abs(notable.fromNowPct) < 0.02) return null
+  if (!notable) return null
 
   return (
     <p className="mt-2 text-xs text-[color:var(--ink-3)]">
       <span className="font-mono text-[10px] tracking-wider">
-        {above ? 'PEAKED' : 'BOTTOMED'}
+        {notable.word}
       </span>{' '}
-      at{' '}
       <span className="tabular text-[color:var(--ink-2)]">
         ${notable.close.toFixed(2)}
       </span>{' '}
       on {notable.date} —{' '}
       <span
-        style={{ color: above ? 'var(--up)' : 'var(--down)' }}
+        style={{ color: notable.up ? 'var(--up)' : 'var(--down)' }}
         className="tabular"
       >
-        {(Math.abs(notable.fromNowPct) * 100).toFixed(1)}%
+        {(Math.abs(notable.amount) * 100).toFixed(1)}%
       </span>{' '}
-      {above ? 'above' : 'below'} where it sits now.
+      {notable.tail}.
     </p>
   )
 }

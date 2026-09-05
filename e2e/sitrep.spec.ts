@@ -277,11 +277,14 @@ test('the brief shows the path, not only the endpoints', async ({ page }) => {
   // A one-line shape of the absence, before any card.
   await expect(page.getByText(/^In \d+ trading sessions?:/)).toBeVisible()
 
-  // And where the price went in between. "Up 5% since you looked" and "up 5%,
-  // having been 20% higher" are the same number and different fortnights.
-  await expect(page.getByText(/PEAKED|BOTTOMED/).first()).toBeVisible()
+  // And where the price went in between — but only when the endpoints do not
+  // already imply it. A name up 76% was obviously lower earlier; saying so is
+  // arithmetic, not information.
+  await expect(page.getByText(/REACHED|FELL TO/).first()).toBeVisible()
   await expect(
-    page.getByText(/(above|below) where it sits now/).first(),
+    page.getByText(
+      /(higher before easing back|below where you last saw it, then recovered)/,
+    ).first(),
   ).toBeVisible()
 })
 

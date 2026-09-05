@@ -43,6 +43,15 @@ const SURFACED: Severity[] = ['CRITICAL', 'IMPORTANT', 'WATCH']
 /** Default number of cards. Deliberately small; see docs/calibration.md. */
 export const DEFAULT_ATTENTION_BUDGET = 5
 
+export interface Extreme {
+  close: number
+  date: string
+  /** Distance from today's close. */
+  fromNowPct: number
+  /** Distance from the price when the user last looked. */
+  fromBaselinePct: number
+}
+
 export interface ChronologyEntry {
   /** `YYYY-MM-DD` */
   date: string
@@ -93,8 +102,8 @@ export interface SitrepItem {
   rank: number
   /** What the move MEANS for the position the user declared. */
   framing: PositionFraming | null
-  peak: { close: number; date: string; fromNowPct: number } | null
-  trough: { close: number; date: string; fromNowPct: number } | null
+  peak: Extreme | null
+  trough: Extreme | null
   lastClose: number
   asOf: string
   confidence: number
@@ -614,12 +623,15 @@ async function assembleSitrep(userId: string): Promise<SitrepResult> {
     // excursion has to be large in absolute terms AND at least twice the net
     // move, which is what separates "rose and gave it back" from "rose".
     roundTrips: surfaced.filter((i) => {
-      const excursion = Math.max(
-        Math.abs(i.peak?.fromNowPct ?? 0),
-        Math.abs(i.trough?.fromNowPct ?? 0),
-      )
-      const net = Math.abs(i.windowReturnPct ?? 0)
-      return excursion >= 0.12 && excursion >= 2 * net
+      // Same test the card uses: went above where it is now, or below where
+      // you left it. Both are excursions the endpoints do not imply.
+      // A higher bar than the card uses, deliberately. The card is detail
+      // about one name and 5% is worth a line there; the summary is a headline
+      // count, and a clause that covers most of the watchlist tells the reader
+      // nothing. 15% is an excursion someone would actually remember.
+      const gaveBack = i.peak?.fromNowPct ?? 0
+      const dipped = i.trough?.fromBaselinePct ?? 0
+      return gaveBack >= 0.15 || dipped <= -0.15
     }).length,
   })
 
@@ -696,24 +708,26 @@ async function windowStats(instrumentId: string, since: Date | null) {
 }
 
 async function computeWindowStats(instrumentId: string, since: Date | null) {
-  // Load enough bars to actually COVER the absence.
+  // Four small queries, not one growing array.
   //
-  // This was fixed at 40, which quietly broke the headline number for any
-  // long absence: a 75-day window spans about 52 sessions, so the baseline
-  // fell off the end of the array, `findIndex` returned 0, and "since you
-  // looked" was measured from the oldest bar loaded rather than from the
-  // cursor. The percentage was real; it just answered a different question
-  // than the label above it claimed.
-  const windowSessions = since
-    ? tradingDaysBetween(since.toISOString().slice(0, 10), nyDate(new Date()))
-        .length
-    : 0
-  const take = Math.min(400, Math.max(40, windowSessions + 5))
+  // This began as a fixed 40 bars, which silently broke the headline number:
+  // a 75-day absence spans about 52 sessions, so the cursor bar fell off the
+  // end of the array and "since you looked" measured from the oldest bar
+  // loaded instead. Raising the limit to cover the window fixed that case and
+  // left the same failure waiting further out - an absence past the cap would
+  // land in exactly the same place.
+  //
+  // A ceiling is not a fix. Nothing here actually needs the window as an
+  // array: the baseline is ONE row, the extremes are one row each, and the
+  // recent tail is only for volatility and the sparkline. Asking the database
+  // for each directly is correct for an absence of any length and returns a
+  // bounded number of rows however long that is.
+  const RECENT_SESSIONS = 40
 
-  const bars = await db.dailyBar.findMany({
+  const recent = await db.dailyBar.findMany({
     where: { instrumentId },
     orderBy: { barDate: 'desc' },
-    take,
+    take: RECENT_SESSIONS,
     select: {
       barDate: true,
       closeAdj: true,
@@ -723,7 +737,7 @@ async function computeWindowStats(instrumentId: string, since: Date | null) {
     },
   })
 
-  if (bars.length === 0) {
+  if (recent.length === 0) {
     return {
       returnPct: null,
       sigmas: null,
@@ -735,10 +749,13 @@ async function computeWindowStats(instrumentId: string, since: Date | null) {
     }
   }
 
-  const ascending = [...bars].reverse()
+  const ascending = [...recent].reverse()
   const closes = ascending.map((b) => Number(b.closeAdj))
   const last = closes[closes.length - 1]
+  const latest = ascending[ascending.length - 1]
 
+  // Daily volatility from the recent tail. This is a property of the name, not
+  // of the absence, so it does not need the whole window.
   const rets: number[] = []
   for (let i = 1; i < closes.length; i++) {
     rets.push(Math.log(closes[i] / closes[i - 1]))
@@ -748,56 +765,96 @@ async function computeWindowStats(instrumentId: string, since: Date | null) {
     rets.reduce((a, b) => a + (b - mean) ** 2, 0) / Math.max(1, rets.length - 1)
   const sigma = Math.sqrt(variance)
 
-  let baselineIndex = ascending.length - 2
-  if (since) {
-    const idx = ascending.findIndex((b) => b.barDate >= since)
-    if (idx > 0) baselineIndex = idx - 1
-    else if (idx === 0) baselineIndex = 0
-  }
-  baselineIndex = Math.max(0, Math.min(baselineIndex, ascending.length - 2))
+  // The baseline: the last close at or before the cursor. One row, exact,
+  // however long ago that was.
+  const baselineRow = since
+    ? await db.dailyBar.findFirst({
+        where: { instrumentId, barDate: { lte: since } },
+        orderBy: { barDate: 'desc' },
+        select: { barDate: true, closeAdj: true },
+      })
+    : null
 
-  const from = closes[baselineIndex]
-  const sessions = Math.max(1, ascending.length - 1 - baselineIndex)
+  const baseline = baselineRow
+    ? { date: baselineRow.barDate, close: Number(baselineRow.closeAdj) }
+    : // No cursor, or a cursor older than any stored bar: fall back to the
+      // previous session, which is what "since you last looked" degrades to
+      // for a brand-new watcher.
+      {
+        date: ascending[Math.max(0, ascending.length - 2)].barDate,
+        close: closes[Math.max(0, closes.length - 2)],
+      }
+
+  const from = baseline.close
   const returnPct = from > 0 ? last / from - 1 : null
+
+  const sessionsElapsed = Math.max(
+    1,
+    tradingDaysBetween(
+      baseline.date.toISOString().slice(0, 10),
+      latest.barDate.toISOString().slice(0, 10),
+    ).length - 1,
+  )
+
   const sigmas =
     sigma > 0 && from > 0
-      ? Math.log(last / from) / (sigma * Math.sqrt(sessions))
+      ? Math.log(last / from) / (sigma * Math.sqrt(sessionsElapsed))
       : null
 
   // The PATH, not just the endpoints.
   //
-  // A returning user saw where the price ended and missed everything in
-  // between. "Up 5.5% since you looked" and "up 5.5%, having been 19% higher
-  // three weeks ago and given it all back" describe the same two numbers and
-  // completely different fortnights.
-  const windowBars = ascending.slice(baselineIndex)
-  let peak = windowBars[0]
-  let trough = windowBars[0]
-  for (const b of windowBars) {
-    if (Number(b.closeAdj) > Number(peak.closeAdj)) peak = b
-    if (Number(b.closeAdj) < Number(trough.closeAdj)) trough = b
+  // "Up 5.5% since you looked" and "up 5.5%, having been 19% higher three
+  // weeks ago and given it all back" are the same two numbers describing
+  // completely different fortnights. One row each, ordered by price rather
+  // than pulled back and scanned.
+  const windowFilter = {
+    instrumentId,
+    barDate: { gt: baseline.date },
   }
 
-  const extreme = (b: (typeof windowBars)[number]) => ({
-    close: Number(b.closeAdj),
-    date: b.barDate.toISOString().slice(0, 10),
-    // How far today sits from that point, signed from today's perspective.
-    fromNowPct: last > 0 ? Number(b.closeAdj) / last - 1 : 0,
-  })
+  const [highRow, lowRow] = await Promise.all([
+    db.dailyBar.findFirst({
+      where: windowFilter,
+      orderBy: { closeAdj: 'desc' },
+      select: { barDate: true, closeAdj: true },
+    }),
+    db.dailyBar.findFirst({
+      where: windowFilter,
+      orderBy: { closeAdj: 'asc' },
+      select: { barDate: true, closeAdj: true },
+    }),
+  ])
+
+  const extreme = (row: { barDate: Date; closeAdj: unknown } | null) => {
+    if (!row) return null
+    const close = Number(row.closeAdj)
+    const date = row.barDate.toISOString().slice(0, 10)
+    // An extreme that IS today is not a path, it is the price.
+    if (date === latest.barDate.toISOString().slice(0, 10)) return null
+    return {
+      close,
+      date,
+      fromNowPct: last > 0 ? close / last - 1 : 0,
+      // Measured against WHERE YOU LEFT IT, which is the comparison that
+      // decides whether the path is news.
+      //
+      // Against today, a name up 76% will always report a low far below -
+      // which is arithmetic, not information. Against the baseline, the same
+      // low says nothing (it simply rose), while a name up 9% that first fell
+      // 9% BELOW where you last saw it has genuinely been somewhere the
+      // endpoints do not show.
+      fromBaselinePct: from > 0 ? close / from - 1 : 0,
+    }
+  }
 
   return {
     returnPct,
     sigmas,
     lastClose: last,
-    asOf: ascending[ascending.length - 1].asOf.toISOString(),
+    asOf: latest.asOf.toISOString(),
     sparkline: closes.slice(-20),
-    // Only worth reporting when the path went somewhere the endpoints do not
-    // show. A peak that IS today is not news.
-    peak: peak.barDate === windowBars[windowBars.length - 1].barDate ? null : extreme(peak),
-    trough:
-      trough.barDate === windowBars[windowBars.length - 1].barDate
-        ? null
-        : extreme(trough),
+    peak: extreme(highRow),
+    trough: extreme(lowRow),
   }
 }
 

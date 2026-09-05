@@ -10,6 +10,46 @@ look for.
 
 ---
 
+## Session 10 — docs, the 40-bar residual, and an end-to-end pass
+
+### Built
+
+- **`project_description.md`** — what the product is, in plain language, for a
+  reader with no finance or engineering background.
+- **`run_commands_list.md`** — every command to run the project, from a zip and
+  from GitHub, including Docker setup and a troubleshooting section.
+
+### Fixed
+
+- **The 40-bar residual, properly.** The previous fix raised the cap to 400
+  bars, which moved the failure rather than removing it: an absence past the
+  cap would land in exactly the same place. Nothing needed the window as an
+  array — the baseline is one row, each extreme is one row, and the recent tail
+  is only for volatility and the sparkline. Four small queries replace it,
+  correct for an absence of any length. Verified against an independent
+  calculation at 30, 75, 500, 1500 and 2200 days: **exact at every length**.
+
+### Exposed by the end-to-end pass
+
+- **Every card said "BOTTOMED".** The path was measured against today, so a
+  name up 76% always reported a low far below — which is arithmetic, not
+  information. Extremes are now measured against **where you left it**: a low
+  below your baseline that recovered, or a high above today that eased back.
+  Both are excursions the endpoints do not imply. 5 of 5 cards → 3 of 5, in
+  both directions.
+- **The summary's round-trip count went to 9 of 13** under the new rule. The
+  card and the summary now use different thresholds on purpose: 5% is worth a
+  line about one name, 15% is what a headline count needs to stay meaningful.
+- **The positions view was nearly empty**, because the demo seeded an intent
+  for 4 names out of 17 — a feature that works looking like one that does not.
+  Now 12 of 17.
+- **`HEDGE` could not be demonstrated honestly.** Nothing in this universe is
+  a hedge: the sector ETFs are regression proxies rather than watchable
+  instruments, and no equity is defensive. Labelling one would be a demo that
+  lies about the data, so the framing stays unit-tested and unattached.
+
+---
+
 ## Session 9 — position-aware framing, rank churn, three views
 
 ### Verified before starting
