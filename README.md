@@ -10,13 +10,15 @@ Not a dashboard. A briefing.
 
 ## Run it
 
-No API keys needed. Real market data is committed as fixtures.
+**No API keys needed.** Real market history is committed, so a fresh clone runs
+offline. Add keys later and it goes live on its own — the mode is detected from
+what is available rather than set by a flag someone has to remember to flip.
 
 ```bash
-docker compose up -d          # postgres on 5433, redis on 6380
+docker compose up -d                        # postgres on 5433, redis on 6380
 npm install
-npx prisma migrate dev
-npm run demo:reset            # seed, load fixtures, compute events, plant a cursor
+npx prisma migrate deploy && npx prisma generate
+npm run demo:reset                          # seed, load history, compute, plant a cursor
 npm run dev
 ```
 
@@ -24,33 +26,43 @@ Open http://localhost:3000 and sign in as `demo@sitrep.local` / `sitrep-demo-202
 
 | Page | What it shows |
 |---|---|
-| `/` | The SITREP — what changed since your cursor |
-| `/replay` | Step two real historical windows one trading day at a time |
-| `/watchlist` | Manage names, priority, and intent |
-| `/admin/pipeline` | Ingest runs, data quality, engine version |
+| `/` | The brief — what changed since your cursor, ranked and cut to a budget |
+| `/market` | The same names with the filter off; the cut shown as dimming |
+| `/positions` | The same moves reframed by what you said you were doing |
+| `/performance` | How often each detector's warnings preceded a real move |
+| `/replay` | Step any historical window one trading day at a time |
+| `/watchlist` | Names, priority, intent, attention budget, and the cursor rewind |
+| `/admin/pipeline` | Ingest runs, data quality, queue depth, cache state |
 
 ```bash
-npm test              # 225 unit tests, engine + ingestion
-npm run test:e2e      # 4 Playwright journeys through a real browser
+npm test              # 227 unit tests, engine + ingestion
+npm run test:e2e      # 12 Playwright journeys through a real browser
 npm run calibrate     # replay history, rewrite docs/calibration.md
-npm run verify        # 82 checks: requirements, auth, ingestion, cache
+npm run verify        # 83 checks: requirements, auth, ingestion, cache
 ```
 
-### Background ingestion (optional, needs API keys)
+### Background ingestion (automatic once keys are present)
 
 ```bash
 npm run worker                                    # consumes the queues
-curl -X POST localhost:3000/api/cron/ingest      -H "authorization: Bearer $CRON_SECRET"      # enqueues all 26 symbols
+curl -X POST localhost:3000/api/cron/ingest      -H "authorization: Bearer $CRON_SECRET"      # enqueues only what is missing
 ```
 
-The route only **enqueues** — it returns in milliseconds regardless of how slow
-or rate-limited the upstream feeds are, and never does provider I/O on a
-request thread. The worker paces itself against the free tiers (Twelve Data
-8/min, Tiingo 50/hour), retries with a long backoff because the real failure is
-an hourly quota rather than a transient blip, and when the batch drains it
-enqueues **one** recompute — not one per symbol, because a name's features
-depend on the benchmark and sector proxies and computing mid-batch would read a
-half-updated universe.
+The worker **schedules itself** against a market calendar — nothing
+market-facing runs at a weekend, on a holiday, or outside the session it belongs
+to. The cron route stays for forcing a run; it only **enqueues**, returning in
+milliseconds however slow the upstream feeds are.
+
+It asks for **exactly what is missing**, not a fixed window: on a normal day
+most symbols are already current and cost nothing. Pacing differs per provider
+because their limits differ in kind — Twelve Data's 8/min is a rolling rate, so
+its bucket starts empty; Tiingo's 50/hour is a quota, so bursting is fine.
+
+When a batch settles it enqueues **one** recompute, not one per symbol: a name's
+features depend on the benchmark and sector proxies, so computing mid-batch
+reads a half-updated universe. That is a settle timer rather than BullMQ's
+`drained` event, which fires whenever the wait list empties — including
+repeatedly, mid-batch.
 
 ---
 
@@ -409,9 +421,11 @@ Run `npx tsx scripts/verify-auth.ts` — 12 checks against real Postgres, includ
 
 ## Testing
 
-225 unit tests, 12 browser journeys, and 82 checks against real Postgres and Redis across four verification suites — requirements, auth, ingestion and cache.
+227 unit tests, 12 browser journeys, and 83 checks against real Postgres and Redis across four verification suites — requirements, auth, ingestion and cache.
 
 Every detector has a **firing fixture and a must-not-fire fixture** — a detector that only ever fires is indistinguishable from a broken one, and on a product whose promise is filtering noise, false positives are the expensive failure.
+
+**Run the suites one at a time.** `npm run verify` and `npm run test:e2e` both reset the demo user's cursor and watchlist, so running them concurrently — or poking the demo account in a browser while they run — produces failures that are races rather than regressions. `npm test` is pure and safe to run alongside anything.
 
 Market data cannot produce "a 3.2σ gap on otherwise calm tape" on demand, so `src/engine/testing/synthetic.ts` generates seeded series with injectable events. Real history is used for calibration; synthetic series prove the detectors respond to the thing they claim to detect.
 
@@ -421,9 +435,12 @@ Several tests exist specifically to pin down bugs that were written and then cau
 - sector divergence fired on 0.16% moves (tight residual distributions inflate z-scores)
 - the session-move validator rejected 9,008 valid rows across a gap in the series
 - a 2:1 split deliberately passes the validator — documented as a limitation rather than faked
+- a stated position vanished below a 2% move, so a name you had marked *holding* lost its label entirely when the price was quiet
+- the news relevance filter matched tickers as substrings, so `MU` matched `MUCH`
+- gap repair asked for a single day, which the provider rejects outright — the routine daily update was the broken path
 
 The browser suite is deliberately thin: four journeys covering the three
-minimums plus replay. Broad UI coverage of a product whose logic already has 225
+minimums plus replay. Broad UI coverage of a product whose logic already has 227
 unit tests would be slow to run, slower to maintain, and would mostly re-test
 React. It did earn its place immediately though — it caught the acknowledge
 button hiding a card optimistically without ever re-reading the brief, so the
@@ -442,6 +459,12 @@ Named because they were decisions, not oversights.
 **Learned ranking.** Personalisation is two explicit user choices — priority and intent. No cold start, no feedback loop to debug, and the user can always see why their own setting changed the number.
 
 **Earnings in calibration.** Finnhub's free tier serves forward-looking earnings only; historical windows return zero rows. The detector is live-only and its contribution to the attention budget is honestly unmeasured.
+
+**Incremental compute.** Every recompute is a full replace — correct and idempotent, but `O(universe × history)`. The incremental version is designed and deliberately deferred: today's correlation depends on a rolling 120-day window, so invalidating the wrong dependants produces a *silently different* answer. It only ships alongside a CI assertion that incremental and full agree exactly.
+
+**Crypto.** The engine needs only OHLCV plus a benchmark and a peer proxy, so it is asset-agnostic in principle — but crypto breaks three things rather than reusing them: `sessionsSinceLastSeen` counts trading days, `MIN_HISTORY` and `BETA_WINDOW` are session counts, and `earnings_upcoming` has nothing to fire on. Every threshold was also calibrated on equity volatility. Naming the three breakages is worth more than a half-migrated ticker.
+
+**Cache stampede protection.** At this scale a popular key expiring means a handful of concurrent recomputes, not a thundering herd. The mechanism — a short recompute lock, one request rebuilding while others serve the previous value — is documented rather than built.
 
 ---
 
