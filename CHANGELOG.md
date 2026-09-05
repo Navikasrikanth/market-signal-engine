@@ -92,6 +92,27 @@ Still branch `ui-overhaul`, still look-and-feel only. `npm run verify` remains
   nothing. Reading pixels rather than asserting on the fit variables is the
   point: the arithmetic was right on the pass where the *labels* overhung.
 
+### Fixed after the fact (same session)
+
+Found by running the suites back to back rather than separately - which is how
+anyone checking this project out will actually run them.
+
+- **The fit ignored the glow.** A surfaced point carries a halo drawn to five
+  times its radius, and the fit framed only the point CENTRES - so the scene
+  still bled off the edge, just less obviously than before. It now pads each
+  surfaced point by 3r, which covers the visible part of the gradient without
+  framing an asymptote nobody can perceive.
+- **The framing test counted invisible pixels.** Treating any non-zero alpha as
+  ink would have forced the scene to shrink until the imperceptible tail of
+  every glow fit inside the frame. The threshold is 50/255 - where the halo
+  stops being something a viewer can see, and still below every solid element.
+- **Two new specs depended on what ran before them.** The verify suite moves the
+  demo cursor as part of what it checks, so running it and the browser suite in
+  sequence left the brief quiet and both new specs failed on an empty page,
+  while passing perfectly in isolation. They reseed the demo user now, as the
+  original journey always did. A test whose result depends on execution order
+  is not a test, and "run them separately" is a workaround rather than a fix.
+
 ### Verification
 
 `tsc` clean, **227** unit tests, **14** browser journeys (13 to 14: the framing

@@ -1,5 +1,24 @@
 import { test, expect } from '@playwright/test'
 
+import { execSync } from 'node:child_process'
+
+/**
+ * Reset the demo user to a known returning-user state first.
+ *
+ * Not optional, and not copied for symmetry: without it this file inherits
+ * whatever state the previous command left behind. `npm run verify` moves the
+ * demo user's cursor as part of what it checks, so running the two in sequence
+ * left the brief quiet — no cards, no canvas — and this spec failed on an
+ * empty page while passing perfectly when run on its own. A test whose result
+ * depends on what ran before it is not a test.
+ *
+ * Safe because `workers: 1` and `fullyParallel: false`: no other spec is
+ * running while this reseeds.
+ */
+test.beforeAll(() => {
+  execSync('npx tsx scripts/seed-demo.ts --days=75', { stdio: 'pipe' })
+})
+
 /**
  * Reduced motion is a promise, so it gets a test.
  *

@@ -1,5 +1,24 @@
 import { test, expect } from '@playwright/test'
 
+import { execSync } from 'node:child_process'
+
+/**
+ * Reset the demo user to a known returning-user state first.
+ *
+ * Not optional, and not copied for symmetry: without it this file inherits
+ * whatever state the previous command left behind. `npm run verify` moves the
+ * demo user's cursor as part of what it checks, so running the two in sequence
+ * left the brief quiet — no cards, no canvas — and this spec failed on an
+ * empty page while passing perfectly when run on its own. A test whose result
+ * depends on what ran before it is not a test.
+ *
+ * Safe because `workers: 1` and `fullyParallel: false`: no other spec is
+ * running while this reseeds.
+ */
+test.beforeAll(() => {
+  execSync('npx tsx scripts/seed-demo.ts --days=75', { stdio: 'pipe' })
+})
+
 /**
  * The field must fit its frame, at any width.
  *
@@ -31,19 +50,32 @@ test('the attention field never clips, at any width', async ({ page }) => {
     const edges = await page.locator('canvas').first().evaluate((c) => {
       const el = c as HTMLCanvasElement
       const d = el.getContext('2d')!.getImageData(0, 0, el.width, el.height).data
+
+      /*
+       * Visible ink, not any non-zero alpha.
+       *
+       * Surfaced points carry a radial glow that fades asymptotically to
+       * nothing. Counting every non-zero pixel would treat the invisible tail
+       * of that gradient as content and force the scene to be shrunk until
+       * even the imperceptible part fits — which is not the invariant. 50/255
+       * is where the halo stops being something a viewer can actually see,
+       * and it still catches every solid element: points, labels, stems, the
+       * plane outline and the contact shadows.
+       */
+      const VISIBLE = 50
       const alpha = (px: number, py: number) => d[(py * el.width + px) * 4 + 3]
 
       let border = 0
       let ink = 0
       for (let px = 0; px < el.width; px++) {
-        if (alpha(px, 0) > 0) border++
-        if (alpha(px, el.height - 1) > 0) border++
+        if (alpha(px, 0) > VISIBLE) border++
+        if (alpha(px, el.height - 1) > VISIBLE) border++
       }
       for (let py = 0; py < el.height; py++) {
-        if (alpha(0, py) > 0) border++
-        if (alpha(el.width - 1, py) > 0) border++
+        if (alpha(0, py) > VISIBLE) border++
+        if (alpha(el.width - 1, py) > VISIBLE) border++
       }
-      for (let i = 3; i < d.length; i += 4) if (d[i] > 0) ink++
+      for (let i = 3; i < d.length; i += 4) if (d[i] > VISIBLE) ink++
       return { border, ink }
     })
 

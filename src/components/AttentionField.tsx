@@ -285,9 +285,7 @@ export function AttentionField({
       ]
 
       const half = SPAN / 2
-      const probes: Array<[number, number, number]> = [
-        ...world.map((p) => [p.x, p.y, p.z] as [number, number, number]),
-        // The ground corners, so the grid is framed too, not just the points.
+      const corners: Array<[number, number, number]> = [
         [-half, 0, -half],
         [half, 0, -half],
         [half, 0, half],
@@ -297,18 +295,43 @@ export function AttentionField({
       for (const cam of cameras) {
         yaw = cam[0]
         pitch = cam[1]
-        for (let i = 0; i < probes.length; i++) {
-          const q = project(probes[i][0], probes[i][1], probes[i][2])
-          // Labels sit above the points, and the plane's caption below the
-          // lowest corner, so the extent has to include both.
-          const isPoint = i < world.length
-          top = Math.min(top, q.sy - (isPoint ? LABEL_HEAD : 0))
-          bottom = Math.max(bottom, q.sy + (isPoint ? 0 : LABEL_HEAD))
-          // Symbols are drawn centred on their point, so the horizontal
-          // extent has to allow for half a label either side.
-          const pad = isPoint ? 26 : 0
-          left = Math.min(left, q.sx - pad)
-          right = Math.max(right, q.sx + pad)
+
+        for (const p of world) {
+          const q = project(p.x, p.y, p.z)
+
+          /*
+           * A point is bigger than its centre.
+           *
+           * Measuring centres alone is what let the scene clip after it was
+           * supposedly solved: a surfaced point carries a glow drawn out to
+           * five times its radius, so the visible mark extends far past the
+           * coordinate being framed. Padding to 3r covers the part of that
+           * halo which is actually visible: the gradient falls linearly from
+           * 40% alpha, so by 2.6r it is under the 50/255 the framing test
+           * treats as ink, and 3r leaves margin over that. Framing the full
+           * 5r asymptote would shrink the whole scene to accommodate pixels
+           * nobody can perceive.
+           */
+          const glow = p.surfaced ? SEV_RADIUS[p.severity] * 3 * q.k : 0
+          const above = Math.max(glow, LABEL_HEAD)
+
+          top = Math.min(top, q.sy - above)
+          bottom = Math.max(bottom, q.sy + glow)
+          // Symbols are drawn centred on their point, so allow half a label
+          // either side as well as the halo.
+          const side = Math.max(glow, 26)
+          left = Math.min(left, q.sx - side)
+          right = Math.max(right, q.sx + side)
+        }
+
+        // The ground corners, so the grid is framed too — and the plane's
+        // caption, which hangs below the lowest one.
+        for (const c of corners) {
+          const q = project(c[0], c[1], c[2])
+          top = Math.min(top, q.sy)
+          bottom = Math.max(bottom, q.sy + LABEL_HEAD)
+          left = Math.min(left, q.sx)
+          right = Math.max(right, q.sx)
         }
       }
 
