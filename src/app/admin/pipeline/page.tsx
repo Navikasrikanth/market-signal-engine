@@ -5,7 +5,7 @@ import { db } from '@/lib/db'
 import { ENGINE_VERSION, SCORER_VERSION } from '@/engine/types'
 import { queueDepths } from '@/lib/queue'
 import { cacheStats } from '@/lib/cache'
-import { TopNav } from '@/components/TopNav'
+import { Shell } from '@/components/Shell'
 
 export const dynamic = 'force-dynamic'
 
@@ -42,15 +42,13 @@ export default async function PipelinePage() {
   const counts = new Map(severity.map((s) => [s.severity as string, s._count]))
 
   return (
-    <main className="mx-auto w-full max-w-3xl px-5 py-10">
-      <TopNav current="/admin/pipeline" />
+    <Shell displayName={user.displayName}>
+    <main className="mx-auto w-full max-w-4xl px-5 py-10">
 
-      <h1 className="mt-6 text-2xl font-semibold tracking-tight">
-        Pipeline health
-      </h1>
+      <h1 className="display rise">Pipeline health</h1>
 
       <Section title="ENGINE">
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
+        <dl className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
           <Stat label="engine" value={ENGINE_VERSION} />
           <Stat label="scorer" value={SCORER_VERSION} />
           <Stat label="bars" value={bars.toLocaleString()} />
@@ -59,7 +57,7 @@ export default async function PipelinePage() {
       </Section>
 
       <Section title="EVENTS BY SEVERITY">
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-5">
+        <dl className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-5">
           {severityOrder.map((s) => (
             <Stat key={s} label={s.toLowerCase()} value={String(counts.get(s) ?? 0)} />
           ))}
@@ -73,7 +71,7 @@ export default async function PipelinePage() {
       </Section>
 
       <Section title="DATA QUALITY">
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
+        <dl className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
           <Stat
             label="cross-source conflicts"
             value={conflicts.toLocaleString()}
@@ -148,7 +146,7 @@ export default async function PipelinePage() {
       </Section>
 
       <Section title="CACHE">
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
+        <dl className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
           <Stat label="enabled" value={cache.enabled ? 'yes' : 'no'} />
           <Stat
             label="hit rate"
@@ -274,6 +272,7 @@ export default async function PipelinePage() {
         )}
       </Section>
     </main>
+    </Shell>
   )
 }
 
@@ -285,22 +284,31 @@ function Section({
   children: React.ReactNode
 }) {
   return (
-    <section className="mt-6 rounded-lg border border-[color:var(--border)] bg-[color:var(--surface)] p-4">
-      <h2 className="mb-3 font-mono text-[10px] tracking-wider text-[color:var(--ink-3)]">
-        {title}
-      </h2>
+    <section className="card mt-6 p-4">
+      <h2 className="meta mb-3">{title}</h2>
       {children}
     </section>
   )
 }
 
+/**
+ * A tile rather than a line of a definition list.
+ *
+ * This page is read when something is wrong, usually quickly. Giving each
+ * number its own bounded surface makes the grid scannable — a wall of
+ * label/value pairs at the same weight is one where the anomalous figure looks
+ * exactly like the six healthy ones beside it.
+ */
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex flex-col">
-      <dt className="font-mono text-[10px] tracking-wider text-[color:var(--ink-3)]">
+    <div
+      className="rounded-[var(--r-md)] border border-[color:var(--border)] bg-[color:var(--surface-2)] px-3 py-2 transition-[transform,border-color,box-shadow] duration-300 hover:-translate-y-0.5 hover:border-[color:var(--border-strong)] hover:shadow-[var(--elev-2)]"
+      style={{ transitionTimingFunction: 'var(--ease-spring)' }}
+    >
+      <dt className="meta truncate" title={label}>
         {label}
       </dt>
-      <dd className="tabular text-lg">{value}</dd>
+      <dd className="num mt-0.5 text-lg">{value}</dd>
     </div>
   )
 }

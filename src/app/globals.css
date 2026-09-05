@@ -1,33 +1,107 @@
 @import "tailwindcss";
 
 /*
- * SITREP is an intelligence brief, not a trading terminal. The palette is
- * deliberately restrained: a near-black slate ground, one amber accent for
- * attention, and semantic colour reserved for severity and direction so that
- * colour always means something. Nothing decorative competes with the ranking.
+ * SITREP is an intelligence brief, not a trading terminal.
+ *
+ * The palette is deliberately restrained: a near-black slate ground, one amber
+ * accent for attention, and semantic colour reserved for severity and
+ * direction so that colour always MEANS something. Decoration draws from the
+ * neutral ramp and the accent; it never borrows the semantic set, because if
+ * everything glows then glowing stops being information.
+ *
+ * Every duration, radius, shadow and blur below is a token. Nothing in a
+ * component should invent its own — that is how a design system drifts back
+ * into a pile of one-offs.
  */
 :root {
+  /* ---------------------------------------------------------------- ground */
   --background: #0b0d11;
   --surface: #12151b;
   --surface-2: #171b23;
   --border: #232935;
   --border-strong: #313949;
 
+  /* Translucent surfaces, for glass. Never a flat colour with opacity applied
+     at the component — the alpha is part of the token. */
+  --glass: rgb(23 27 35 / 0.62);
+  --glass-strong: rgb(18 21 27 / 0.82);
+  --glass-hairline: rgb(255 255 255 / 0.06);
+
+  /* ------------------------------------------------------------------ ink */
   --ink: #e8ebf0;
   --ink-2: #a4adbd;
   --ink-3: #6d7787;
 
+  /* --------------------------------------------------------------- accent */
   --accent: #e0a33d;
   --accent-ink: #f0c574;
+  --accent-dim: rgb(224 163 61 / 0.14);
 
+  /* ------------------------------------------------- semantic: direction */
   --up: #3fb984;
   --down: #e5695c;
 
+  /* ------------------------------------------------- semantic: severity */
   --sev-critical: #e5645a;
   --sev-important: #e0a33d;
   --sev-watch: #5aa9c9;
   --sev-info: #8a93a0;
   --sev-noise: #4a525f;
+
+  /* -------------------------------------------------------------- elevation
+   *
+   * Composed shadows rather than one-offs. A card sits at a level; hovering
+   * promotes it exactly one step. Two layers each — a tight contact shadow and
+   * a wide ambient one — because a single blur reads as fog rather than lift.
+   */
+  --elev-0: 0 1px 2px rgb(0 0 0 / 0.28);
+  --elev-1: 0 1px 2px rgb(0 0 0 / 0.3), 0 6px 16px -6px rgb(0 0 0 / 0.45);
+  --elev-2: 0 2px 4px rgb(0 0 0 / 0.32), 0 14px 32px -10px rgb(0 0 0 / 0.55);
+  --elev-3: 0 4px 8px rgb(0 0 0 / 0.34), 0 28px 60px -16px rgb(0 0 0 / 0.65);
+
+  /* ------------------------------------------------------------------ radii */
+  --r-sm: 4px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-xl: 18px;
+
+  /* ----------------------------------------------------------------- motion
+   *
+   * Fast enough to feel like a response rather than a performance. The easing
+   * is a decelerating curve: motion arrives quickly and settles, which is what
+   * makes an interface feel answered rather than animated.
+   */
+  --dur-fast: 150ms;
+  --dur-base: 220ms;
+  --dur-slow: 320ms;
+  --dur-lazy: 520ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  /*
+   * A spring, as a curve.
+   *
+   * Overshoots slightly and settles back. Reserved for things the user just
+   * DID — a press, a card lifting under the cursor — because overshoot reads
+   * as a reaction. Anything that moves on its own uses `--ease-out` instead;
+   * a page that springs at you unprompted feels unserious, and this one is
+   * about money.
+   */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /*
+   * How far a card leans at its edge, and how far its front layer floats.
+   *
+   * 8 degrees is deliberately near the top of what still reads as a physical
+   * object: past about ten, text on the far edge starts to look distorted
+   * rather than foreshortened, and a page of numbers cannot afford that.
+   */
+  --tilt: 8deg;
+  --lift-z: 54px;
+
+  /* ------------------------------------------------------------------ shell */
+  --rail-w: 232px;
+  --rail-w-collapsed: 64px;
 }
 
 @theme inline {
@@ -52,13 +126,523 @@
   --font-mono: var(--font-geist-mono);
 }
 
-body {
+/*
+ * The ground colour goes on `html`, not on `body`.
+ *
+ * The mesh and grain below are `body` pseudo-elements at a negative z-index,
+ * and a negative-z-index child paints ABOVE its parent's background. Painting
+ * the ground on `body` would therefore bury both of them.
+ */
+html {
   background: var(--background);
+}
+
+body {
   color: var(--ink);
   font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
 }
 
+/*
+ * The ground.
+ *
+ * Two very low-opacity radial washes and a grain overlay. Large flat dark areas
+ * read as cheap; a couple of percent of noise is the difference between "dark
+ * theme" and "designed". Both are fixed and static — no animation, no cost
+ * beyond one composite.
+ */
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+}
+
+body::before {
+  background:
+    radial-gradient(60rem 40rem at 12% -10%, rgb(224 163 61 / 0.055), transparent 60%),
+    radial-gradient(50rem 36rem at 92% 8%, rgb(90 169 201 / 0.045), transparent 62%),
+    radial-gradient(70rem 50rem at 50% 108%, rgb(63 185 132 / 0.03), transparent 65%);
+}
+
+/* Grain. An inline SVG turbulence, so there is no image request. */
+body::after {
+  opacity: 0.022;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/*
+ * There is deliberately NO rule here lifting `main`/`aside`/`header`/`nav`
+ * above the ground.
+ *
+ * There was one, and it was a real bug. Everything in this file is unlayered,
+ * and unlayered CSS beats every layered rule regardless of specificity — so
+ * `position: relative` on `header` silently defeated Tailwind's `fixed` on the
+ * mobile navigation bar. The bar dropped into normal flow, took the width of
+ * the row, and squeezed the page's `<main>` to forty pixels: below `lg` the
+ * app rendered as an empty screen.
+ *
+ * The ground sits at `z-index: -1` instead, which puts it behind content
+ * without touching how any element is positioned.
+ */
+
+/* ------------------------------------------------------------------ glass */
+
+/*
+ * One definition, used everywhere. `backdrop-filter` is expensive when stacked,
+ * so this is applied to the rail and to hero surfaces only — never to rows in
+ * a list.
+ */
+.glass {
+  background: var(--glass);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  border: 1px solid var(--border);
+  border-top-color: var(--glass-hairline);
+}
+
+.glass-strong {
+  background: var(--glass-strong);
+  backdrop-filter: blur(24px) saturate(1.5);
+  -webkit-backdrop-filter: blur(24px) saturate(1.5);
+  border: 1px solid var(--border);
+  border-top-color: var(--glass-hairline);
+}
+
+/* ------------------------------------------------------------- typography */
+
 /* Digits that line up in columns should actually line up. */
 .tabular {
   font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/*
+ * Every price, percentage, score and count. Applied broadly on purpose: a
+ * number that reflows while it animates is worse than one that never moved.
+ */
+.num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  letter-spacing: -0.01em;
+}
+
+.display {
+  font-size: clamp(1.75rem, 1.2rem + 2vw, 2.6rem);
+  line-height: 1.05;
+  letter-spacing: -0.028em;
+  font-weight: 600;
+}
+
+.meta {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* -------------------------------------------------------------- surfaces */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--elev-1);
+  transition:
+    transform var(--dur-slow) var(--ease-spring),
+    box-shadow var(--dur-slow) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out);
+}
+
+/* Hover promotes by exactly one elevation step. */
+.card-lift:hover {
+  transform: translateY(-3px) scale(1.006);
+  box-shadow: var(--elev-2);
+  border-color: var(--border-strong);
+}
+
+/* ------------------------------------------------------------------- depth
+ *
+ * Real 3D, not a skewed picture of it.
+ *
+ * `.scene` establishes the perspective; `.tilt-3d` is the thing that rotates
+ * inside it, and `preserve-3d` means its children keep their own Z. That is
+ * what separates this from the usual "3D card": the layers genuinely stand at
+ * different depths, so parallax between them falls out of the geometry instead
+ * of being animated by hand.
+ *
+ * `backface-visibility` and a Z-nudge on the text layer keep glyphs off the
+ * fractional-pixel boundaries that make transformed text look soft.
+ */
+.scene {
+  perspective: 1100px;
+  perspective-origin: 50% 50%;
+}
+
+.tilt-3d {
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+  transition: transform var(--dur-slow) var(--ease-spring);
+}
+
+/* Layers. Applied to children of a `.tilt-3d`; each floats towards the viewer. */
+.layer-1 {
+  transform: translateZ(14px);
+}
+.layer-2 {
+  transform: translateZ(28px);
+}
+.layer-3 {
+  transform: translateZ(var(--lift-z));
+}
+
+/*
+ * The sheen: a hard diagonal band of light that sweeps as the card turns.
+ *
+ * Driven by the same `--mx`/`--my` the spotlight uses, so one pointer handler
+ * feeds both and there is no second listener per card.
+ */
+.sheen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease-out);
+  background: linear-gradient(
+    105deg,
+    transparent 35%,
+    rgb(255 255 255 / 0.07) 48%,
+    rgb(255 255 255 / 0.11) 50%,
+    rgb(255 255 255 / 0.07) 52%,
+    transparent 65%
+  );
+  background-size: 260% 100%;
+  background-position: calc(100% - var(--mx, 50%) * 2) 0;
+}
+
+.sheen:hover::after {
+  opacity: 1;
+}
+
+/*
+ * A cursor-following spotlight.
+ *
+ * Driven by two custom properties set on pointermove, so the browser composites
+ * a gradient rather than React re-rendering on every mouse event.
+ */
+.spotlight {
+  position: relative;
+  isolation: isolate;
+}
+
+.spotlight::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease-out);
+  background: radial-gradient(
+    18rem circle at var(--mx, 50%) var(--my, 0%),
+    rgb(255 255 255 / 0.045),
+    transparent 45%
+  );
+  pointer-events: none;
+  z-index: -1;
+}
+
+.spotlight:hover::before {
+  opacity: 1;
+}
+
+/*
+ * Animated gradient border, for CRITICAL only.
+ *
+ * Deliberately scarce. If every card had one it would be wallpaper; on one card
+ * in five it reads as urgency.
+ */
+@property --edge {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.edge-critical::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(
+    from var(--edge),
+    transparent 0deg,
+    var(--sev-critical) 40deg,
+    transparent 120deg,
+    transparent 360deg
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: edge-spin 7s linear infinite;
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+@keyframes edge-spin {
+  to {
+    --edge: 360deg;
+  }
+}
+
+/* ---------------------------------------------------------------- controls */
+
+.btn {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border-strong);
+  color: var(--ink-2);
+  transition:
+    transform var(--dur-base) var(--ease-spring),
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+
+.btn:hover {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  background: var(--accent-dim);
+  transform: translateY(-1px);
+  box-shadow: 0 0 0 1px rgb(224 163 61 / 0.12), 0 6px 18px -8px rgb(224 163 61 / 0.5);
+}
+
+/*
+ * A band of light crossing the button on hover.
+ *
+ * One pseudo-element and one transform. It runs on hover only, and only once
+ * per hover — a shine that loops turns a control into an advertisement.
+ */
+.btn::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transform: translateX(-120%) skewX(-18deg);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgb(255 255 255 / 0.13),
+    transparent
+  );
+}
+
+.btn:hover::after {
+  transition: transform var(--dur-lazy) var(--ease-out);
+  transform: translateX(120%) skewX(-18deg);
+}
+
+/* Compresses when pressed, so a click feels received. */
+.btn:active {
+  transform: scale(0.96) translateY(0);
+  transition-duration: var(--dur-fast);
+}
+
+.btn:focus-visible,
+a:focus-visible,
+select:focus-visible,
+input:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* --------------------------------------------------------------- skeletons */
+
+/*
+ * Shaped like the thing they replace, so nothing jumps when data arrives.
+ * A sweep rather than a pulse: a pulse reads as "broken", a sweep as "loading".
+ */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--surface-2);
+  border-radius: var(--r-md);
+}
+
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgb(255 255 255 / 0.045),
+    transparent
+  );
+  animation: sweep 1.6s var(--ease-in-out) infinite;
+}
+
+@keyframes sweep {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+/* ---------------------------------------------------------------- entrance */
+
+/*
+ * A short rise on first paint. Staggered by an inline delay at the call site so
+ * a list arrives in sequence rather than all at once.
+ */
+.rise {
+  animation: rise var(--dur-lazy) var(--ease-out) both;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+}
+
+/*
+ * The page transition.
+ *
+ * Deliberately smaller and faster than the card entrances. A whole page that
+ * swoops is a page you wait for; the job here is only to signal that the
+ * content changed, and 260ms of a few pixels does that without ever being the
+ * reason something feels slow.
+ */
+.page-in {
+  animation: page-in 260ms var(--ease-out) both;
+}
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/*
+ * Reveal on scroll, in CSS.
+ *
+ * `animation-timeline: view()` drives the animation from the element's own
+ * position in the scrollport rather than from a clock, so there is no
+ * IntersectionObserver, no state, and no JavaScript on the scroll path at all —
+ * it runs off the main thread.
+ *
+ * Wrapped in `@supports` because a browser without it would otherwise leave
+ * every card stuck at `opacity: 0`, which is a blank page rather than a missing
+ * flourish. Progressive enhancement is not optional when the fallback is
+ * "nothing is visible".
+ */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal {
+      animation: reveal linear both;
+      animation-timeline: view();
+      /*
+       * A fixed distance, not a percentage.
+       *
+       * `entry 0% entry 60%` measures against the ELEMENT's height, so a block
+       * taller than the viewport fades in over most of a screenful of
+       * scrolling and sits half-transparent while you are trying to read it.
+       * 240px of travel behaves the same for a one-line caption and for a
+       * chronology with forty entries.
+       */
+      animation-range: entry 0% entry 240px;
+    }
+  }
+}
+
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: translateY(26px) scale(0.97);
+  }
+}
+
+/*
+ * Bars growing from their baseline. A composited scaleX, never a width.
+ */
+.grow-bar {
+  animation: grow-bar var(--dur-lazy) var(--ease-out) both;
+}
+
+@keyframes grow-bar {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+/*
+ * Sparkline draw-in. One composited property, referenced by `Sparkline` and
+ * defined here so the reduced-motion rule below collapses it for free.
+ */
+@keyframes draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* ------------------------------------------------------------ reduced motion
+ *
+ * Global, and stated once. A per-component opt-out is a per-component thing to
+ * forget — and the people who set this preference are the ones for whom
+ * forgetting it hurts most.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .card-lift:hover {
+    transform: none;
+  }
+
+  /*
+   * The 3D pieces, explicitly.
+   *
+   * The blanket rule above collapses DURATIONS, which is not the same as
+   * removing a transform: a tilt with a 0.01ms transition still tilts, it just
+   * snaps there instantly — which is a worse experience than the animation it
+   * was meant to spare. Anything that moves in depth has to be switched off by
+   * name.
+   */
+  .tilt-3d,
+  .tilt-3d:hover,
+  .layer-1,
+  .layer-2,
+  .layer-3 {
+    transform: none !important;
+  }
+
+  .scene {
+    perspective: none;
+  }
+
+  .sheen::after,
+  .btn::after {
+    display: none;
+  }
+
+  .btn:hover,
+  .btn:active {
+    transform: none;
+  }
 }

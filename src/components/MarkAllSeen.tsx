@@ -29,7 +29,7 @@ export function MarkAllSeen() {
       type="button"
       onClick={acknowledge}
       disabled={pending}
-      className="shrink-0 rounded-md border border-[color:var(--border-strong)] px-2.5 py-1 font-mono text-[11px] tracking-wide text-[color:var(--ink-2)] hover:border-[color:var(--accent)] hover:text-[color:var(--accent-ink)] disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-[color:var(--accent)]"
+      className="shrink-0 btn px-2.5 py-1 font-mono text-[11px] tracking-wide disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-[color:var(--accent)]"
     >
       {pending ? 'Marking…' : 'Mark all seen'}
     </button>

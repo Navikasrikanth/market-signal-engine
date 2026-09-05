@@ -6,7 +6,7 @@ import { CustomRange } from '@/components/CustomRange'
 import { Caveat } from '@/components/Caveat'
 import { tradingDaysBetween } from '@/lib/market-calendar'
 import { ReplayPlayer } from '@/components/ReplayPlayer'
-import { TopNav } from '@/components/TopNav'
+import { Shell } from '@/components/Shell'
 
 export const dynamic = 'force-dynamic'
 
@@ -55,12 +55,10 @@ export default async function ReplayPage({ searchParams }: PageProps<'/replay'>)
     : await replayScenario(slug)
 
   return (
+    <Shell displayName={user.displayName}>
     <main className="mx-auto w-full max-w-3xl px-5 py-10">
-      <TopNav current="/replay" />
 
-      <h1 className="mt-6 text-2xl font-semibold tracking-tight">
-        Watch the engine work on history
-      </h1>
+      <h1 className="display rise">Watch the engine work on history</h1>
       <p className="mt-2 max-w-prose text-sm leading-relaxed text-[color:var(--ink-3)]">
         Step a real historical window forward one trading day at a time. At each
         step the engine sees only what it would have seen on that date — no
@@ -82,7 +80,7 @@ export default async function ReplayPage({ searchParams }: PageProps<'/replay'>)
           <Link
             key={s.slug}
             href={`/replay?s=${s.slug}`}
-            className="rounded-md border px-3 py-1.5 font-mono text-xs"
+            className="btn px-3 py-1.5 font-mono text-xs"
             style={
               s.slug === slug
                 ? { borderColor: 'var(--accent)', color: 'var(--accent-ink)' }
@@ -117,5 +115,6 @@ export default async function ReplayPage({ searchParams }: PageProps<'/replay'>)
 
       <ReplayPlayer scenario={scenario} steps={steps} />
     </main>
+    </Shell>
   )
 }

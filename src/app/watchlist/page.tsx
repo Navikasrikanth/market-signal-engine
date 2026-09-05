@@ -5,7 +5,7 @@ import { db } from '@/lib/db'
 import { WatchlistManager } from '@/components/WatchlistManager'
 import { AccountControls } from '@/components/AccountControls'
 import { DEFAULT_ATTENTION_BUDGET } from '@/lib/sitrep'
-import { TopNav } from '@/components/TopNav'
+import { Shell } from '@/components/Shell'
 
 export const dynamic = 'force-dynamic'
 
@@ -50,12 +50,10 @@ export default async function WatchlistPage() {
   })
 
   return (
+    <Shell displayName={user.displayName}>
     <main className="mx-auto w-full max-w-3xl px-5 py-10">
-      <TopNav current="/watchlist" />
 
-      <h1 className="mt-6 text-2xl font-semibold tracking-tight">
-        Manage your watchlist
-      </h1>
+      <h1 className="display rise">Manage your watchlist</h1>
       <p className="mt-2 max-w-prose text-sm leading-relaxed text-[color:var(--ink-3)]">
         Priority is an explicit multiplier on a name&rsquo;s attention score
         (High ×1.3, Low ×0.7). Intent changes which kinds of change matter —
@@ -90,5 +88,6 @@ export default async function WatchlistPage() {
       />
 
     </main>
+    </Shell>
   )
 }

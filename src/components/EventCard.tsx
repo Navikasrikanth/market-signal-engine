@@ -5,6 +5,7 @@ import { useState, useTransition } from 'react'
 import type { SitrepItem } from '@/lib/sitrep'
 import type { TrackRecord } from '@/engine/followthrough'
 import { WhyPanel } from './WhyPanel'
+import { Spotlight } from './Spotlight'
 import {
   AttentionScore,
   Change,
@@ -83,11 +84,39 @@ export function EventCard({
         : 'var(--sev-watch)'
 
   return (
-    <article
-      className="rounded-lg border border-[color:var(--border)] bg-[color:var(--surface)] p-4 transition-opacity"
-      style={{ borderLeft: `2px solid ${accent}`, opacity: dismissed ? 0.4 : 1 }}
+    <Spotlight
+      as="article"
+      /*
+       * The animated gradient edge is reserved for CRITICAL and nothing else.
+       * On one card in five it reads as urgency; on every card it is
+       * wallpaper, and a product whose whole argument is about rationing
+       * attention cannot afford chrome that ignores its own rule.
+       */
+      className={`card relative p-4 ${
+        item.severity === 'CRITICAL' ? 'edge-critical' : ''
+      }`}
     >
-      <header className="flex items-start justify-between gap-4">
+      {/* The severity rail. A painted element rather than a border, so the
+          card's own radius stays intact at the corners. */}
+      <span
+        aria-hidden
+        className="absolute inset-y-0 left-0 w-[2px] rounded-l-[var(--r-lg)]"
+        style={{
+          background: accent,
+          // Slightly proud of the card face, so on a turn it reads as an edge
+          // with thickness rather than a stripe painted on flat card stock.
+          transform: 'translateZ(6px)',
+          boxShadow: `0 0 14px -2px ${accent}`,
+        }}
+      />
+      <div
+        className="transition-opacity"
+        style={{ opacity: dismissed ? 0.4 : 1 }}
+      >
+      {/* The front plane. Symbol, severity and score stand closest to the
+          viewer, so turning the card parallaxes them against the body text
+          behind — the depth is geometry, not a second animation. */}
+      <header className="layer-2 flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="font-mono text-base font-semibold tracking-wide">
@@ -144,14 +173,16 @@ export function EventCard({
           </p>
         </div>
 
-        <AttentionScore score={item.attentionScore} />
+        <span className="layer-3 block">
+          <AttentionScore score={item.attentionScore} />
+        </span>
       </header>
 
-      <p className="mt-3 text-[15px] leading-snug text-[color:var(--ink)]">
+      <p className="layer-1 mt-3 text-[15px] leading-snug text-[color:var(--ink)]">
         {item.headline}
       </p>
 
-      <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
+      <div className="layer-1 mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
         <span className="flex items-center gap-2">
           <span className="font-mono text-[10px] tracking-wider text-[color:var(--ink-3)]">
             SINCE YOU LOOKED
@@ -200,7 +231,7 @@ export function EventCard({
         <button
           type="button"
           onClick={markSeen}
-          className="rounded-md border border-[color:var(--border-strong)] px-2.5 py-1 font-mono text-[11px] tracking-wide text-[color:var(--ink-2)] hover:border-[color:var(--accent)] hover:text-[color:var(--accent-ink)] focus-visible:outline-2 focus-visible:outline-[color:var(--accent)]"
+          className="btn px-2.5 py-1 font-mono text-[11px] tracking-wide"
         >
           Mark seen
         </button>
@@ -214,12 +245,13 @@ export function EventCard({
           onClick={snooze}
           aria-label="Snooze 24h"
           title="Hide for 24 hours without moving your cursor"
-          className="rounded-md border border-[color:var(--border-strong)] px-2.5 py-1 font-mono text-[11px] tracking-wide text-[color:var(--ink-2)] hover:border-[color:var(--accent)] hover:text-[color:var(--accent-ink)] focus-visible:outline-2 focus-visible:outline-[color:var(--accent)]"
+          className="btn px-2.5 py-1 font-mono text-[11px] tracking-wide"
         >
           Snooze 24h
         </button>
       </div>
-    </article>
+      </div>
+    </Spotlight>
   )
 }
 

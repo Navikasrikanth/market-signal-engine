@@ -19,7 +19,7 @@ import type {
   Severity,
   Signal,
 } from '@/engine/types'
-import { MARKET_BENCHMARK } from './universe'
+import { BENCHMARKS, MARKET_BENCHMARK, SECTOR_ETFS } from './universe'
 import { frameForPosition, type PositionFraming } from '@/engine/position'
 import { nyDate, sessionsBehind, tradingDaysBetween } from './market-calendar'
 import { fixtureMode } from './sources/fixture'
@@ -118,6 +118,28 @@ export interface SitrepItem {
   sparkline: number[]
 }
 
+/**
+ * Where the whole market went, over the user's own window.
+ *
+ * The benchmark first, then the sector proxies the relative-performance
+ * detector already regresses against - so every row here is an instrument the
+ * pipeline ingests anyway, and every number comes from the same
+ * `windowStats` used by the cards.
+ */
+export interface MarketPulse {
+  /** SPY's return over the window. The number the narrative already used. */
+  returnPct: number
+  /** That return in units of SPY's own volatility. */
+  sigmas: number
+  /** Benchmarks and sector proxies, in a fixed order. */
+  strip: Array<{
+    symbol: string
+    name: string
+    returnPct: number | null
+    sparkline: number[]
+  }>
+}
+
 export interface SitrepResult {
   displayName: string
   /** Cursor: the moment this user last acknowledged anything. */
@@ -175,6 +197,19 @@ export interface SitrepResult {
   watchlistSize: number
   quiet: boolean
   attentionBudget: number
+  /**
+   * The market the user's names moved inside of, over the same window.
+   *
+   * Computed since the first version and discarded at this boundary: the
+   * narrative consumed SPY's return and sigmas to decide whether to say "the
+   * market was down too", and then nothing else could see them. A reader told
+   * that NVDA fell 6% has no way to know whether that was NVDA or was
+   * everything, and that is the first question anyone asks.
+   *
+   * Measured over the same window as every card, so the comparison is exact by
+   * construction rather than by eye.
+   */
+  market: MarketPulse
   dataQuality: {
     stalestSource: string | null
     lagSeconds: number | null
@@ -673,6 +708,7 @@ async function assembleSitrep(userId: string): Promise<SitrepResult> {
     watchlistSize: rows.length,
     quiet: surfaced.length === 0,
     attentionBudget,
+    market,
     dataQuality: {
       stalestSource: freshness[0]?.sourceId ?? null,
       lagSeconds: freshness[0]?.lagSeconds ?? null,
@@ -860,15 +896,44 @@ async function computeWindowStats(instrumentId: string, since: Date | null) {
 }
 
 /** Benchmark move over the same window, used by the narrative rules. */
-async function marketContext(since: Date | null) {
-  const instrument = await db.instrument.findUnique({
-    where: { symbol: MARKET_BENCHMARK },
-    select: { id: true },
+async function marketContext(since: Date | null): Promise<MarketPulse> {
+  // One query for all of them. These are a fixed handful of ETFs, and asking
+  // for them by name in a loop would be nine round trips for a strip.
+  const symbols = [...BENCHMARKS, ...SECTOR_ETFS].map((s) => s.symbol)
+  const instruments = await db.instrument.findMany({
+    where: { symbol: { in: symbols } },
+    select: { id: true, symbol: true, name: true },
   })
-  if (!instrument) return { returnPct: 0, sigmas: 0 }
 
-  const stats = await windowStats(instrument.id, since)
-  return { returnPct: stats.returnPct ?? 0, sigmas: stats.sigmas ?? 0 }
+  const bySymbol = new Map(instruments.map((i) => [i.symbol, i]))
+
+  // Each of these is the SAME cached `windowStats` the cards use. The strip
+  // cannot disagree with a card about what a window was, because there is only
+  // one implementation of the question.
+  const strip = await Promise.all(
+    symbols
+      .map((symbol) => bySymbol.get(symbol))
+      .filter((i): i is NonNullable<typeof i> => i !== undefined)
+      .map(async (inst) => {
+        const stats = await windowStats(inst.id, since)
+        return {
+          symbol: inst.symbol,
+          name: inst.name,
+          returnPct: stats.returnPct,
+          sparkline: stats.sparkline,
+        }
+      }),
+  )
+
+  const benchmark = bySymbol.get(MARKET_BENCHMARK)
+  if (!benchmark) return { returnPct: 0, sigmas: 0, strip }
+
+  const stats = await windowStats(benchmark.id, since)
+  return {
+    returnPct: stats.returnPct ?? 0,
+    sigmas: stats.sigmas ?? 0,
+    strip,
+  }
 }
 
 function emptyResult(displayName: string, attentionBudget: number): SitrepResult {
@@ -897,6 +962,9 @@ function emptyResult(displayName: string, attentionBudget: number): SitrepResult
     watchlistSize: 0,
     quiet: true,
     attentionBudget,
+    // No watchlist, no window to measure the market over. Zeroes here would be
+    // a claim that the market was flat.
+    market: { returnPct: 0, sigmas: 0, strip: [] },
     dataQuality: {
       stalestSource: null,
       lagSeconds: null,

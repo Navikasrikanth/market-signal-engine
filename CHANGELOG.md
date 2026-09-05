@@ -10,6 +10,210 @@ look for.
 
 ---
 
+## Session 16 - motion, and the field in three dimensions
+
+Still branch `ui-overhaul`, still look-and-feel only. `npm run verify` remains
+**83**, so nothing behind the interface moved.
+
+### Built
+
+- **The attention field is now a 3D scene.** Every watched name stands on a
+  ground grid at a height equal to its attention score, and the budget is a
+  translucent plane cutting through the field. Points break the surface or sit
+  under it. Hand-rolled perspective - yaw, pitch, a focal divide, painter's
+  algorithm with the plane drawn *between* the points below it and the points
+  above it, so the surface genuinely occludes. No Three.js, no WebGL, no
+  dependency.
+  - **One axis carries meaning: height is attention score.** The x/z grid is
+    layout and says nothing, which is written at the top of the file so nobody
+    later reads depth as significance.
+  - The camera drifts slowly and leans towards the cursor, easing rather than
+    tracking, so it feels weighted instead of twitchy.
+- **Real 3D on the cards.** Perspective on an ancestor and `preserve-3d` on the
+  card, so the layers inside genuinely stand at different depths - symbol and
+  score at the front, body text behind, the severity rail proud of the face.
+  The parallax falls out of the geometry rather than being animated by hand.
+  A sheen sweeps across the surface as the card turns, driven by the same
+  pointer values as the spotlight, so there is one handler and not two.
+- **A motion vocabulary**: a spring curve for things the user just *did*, the
+  decelerating curve for anything that moves on its own. Buttons lift, shine
+  once on hover, and compress on press; rows slide; sparklines grow under the
+  cursor; bars grow from their baseline with a composited `scaleX`, never a
+  width.
+- **A sliding rail marker.** One element that travels between destinations,
+  replacing a per-row bar toggled between accent and transparent - a thing that
+  cannot slide, because there is nothing continuous to animate.
+- **Scroll-driven reveals** via `animation-timeline: view()` - no observer, no
+  state, nothing on the scroll path - and a page transition keyed on the
+  pathname, so a navigation restarts the entrance and no exit animation has to
+  be coordinated.
+
+### Fixed
+
+- **The scene clipped its own tallest points** - three times, each time after a
+  constant was tuned until the picture happened to fit the canvas being looked
+  at. The names being cropped were always the highest-scoring ones, which are
+  what the picture exists to show. It now **measures itself**: projects the
+  whole field at the resting camera and at both extremes of the lean, takes the
+  extent including the room labels need, and solves for a scale and offset that
+  fit both axes. Recomputed on resize only, so it is stable while the camera
+  moves.
+- **The scene was centred on the world origin, not on the drawing.** With a
+  yawed camera those are different points, and the field sat left with a band
+  of dead canvas beside it.
+- **`--tilt` delivered half of what it said.** The maths took `(px - 0.5)`, so
+  an 8 degree token produced 4 degrees at the edge - the sort of quiet
+  discrepancy that later gets "fixed" by doubling the constant instead of the
+  arithmetic.
+- **Scroll reveals could stick at `opacity: 0`.** A percentage range measures
+  against the element's own height, so a block taller than the viewport faded
+  in over most of a screenful and sat half-transparent while being read. Now a
+  fixed 240px of travel, which behaves identically for a caption and for a
+  forty-entry chronology.
+- **Held-back points were nearly invisible**, which argued the opposite of what
+  the picture is for: the field looked like five names floating over nothing
+  rather than five of eleven.
+
+### Exposed
+
+- **Reduced motion had a third hole.** The card tilt is an inline transform
+  written from a pointer handler, so the global CSS rule cannot reach it, and
+  collapsing a transition to 0.01ms does not remove a transform - it makes the
+  card *snap* into the tilt, which is worse than the animation it was meant to
+  spare. Every 3D rule is now switched off by name under reduced motion, and
+  the test hovers a card and asserts the transform is identity.
+- **`perspective()` in the element's own transform cannot produce depth.** Each
+  card got its own vanishing point directly behind itself, so nothing inside
+  could parallax against anything else. The camera has to live on an ancestor.
+- **A fit that is not tested is a fit that regresses.** The clipping bug came
+  back twice under different constants, so the invariant is now a test that
+  reads the canvas pixels at seven widths from 360px to 1600px and asserts no
+  ink touches the border - and that the scene did not "fit" by rendering
+  nothing. Reading pixels rather than asserting on the fit variables is the
+  point: the arithmetic was right on the pass where the *labels* overhung.
+
+### Fixed after the fact (same session)
+
+Found by running the suites back to back rather than separately - which is how
+anyone checking this project out will actually run them.
+
+- **The fit ignored the glow.** A surfaced point carries a halo drawn to five
+  times its radius, and the fit framed only the point CENTRES - so the scene
+  still bled off the edge, just less obviously than before. It now pads each
+  surfaced point by 3r, which covers the visible part of the gradient without
+  framing an asymptote nobody can perceive.
+- **The framing test counted invisible pixels.** Treating any non-zero alpha as
+  ink would have forced the scene to shrink until the imperceptible tail of
+  every glow fit inside the frame. The threshold is 50/255 - where the halo
+  stops being something a viewer can see, and still below every solid element.
+- **Two new specs depended on what ran before them.** The verify suite moves the
+  demo cursor as part of what it checks, so running it and the browser suite in
+  sequence left the brief quiet and both new specs failed on an empty page,
+  while passing perfectly in isolation. They reseed the demo user now, as the
+  original journey always did. A test whose result depends on execution order
+  is not a test, and "run them separately" is a workaround rather than a fix.
+
+### Verification
+
+`tsc` clean, **227** unit tests, **14** browser journeys (13 to 14: the framing
+invariant), **83** infrastructure checks unchanged, clean build.
+
+**Measured, not assumed** - 3s sample on the brief while sweeping the pointer
+across the field and cards with tilt, sheen and camera lean all live:
+
+| | |
+|---|---|
+| median frame | **16.7ms** |
+| p95 frame | **16.7ms** |
+| worst frame | 17ms |
+| frames over 20ms | **0** |
+| long tasks over 50ms | **0** |
+
+---
+
+## Session 15 — the UI overhaul
+
+Branch `ui-overhaul`. Scope was explicit: look and feel only — no backend, no
+API, no engine, no schema, no auth. One read-path change was permitted and
+taken. `npm run verify` staying at **83** is the evidence the boundary held.
+
+### Built
+
+- **A design system, used.** `globals.css` now carries elevation, radii,
+  motion, glass and severity-tint tokens, plus a mesh-and-grain ground. The
+  point is the second half: every ad-hoc panel and outlined control in the app
+  was swept onto `.card` / `.glass` / `.btn`. A token layer nothing uses is a
+  token layer that drifts.
+- **`AttentionField`** — the product's argument as one picture. Every watched
+  name is a point placed by attention score, with the budget line drawn across
+  it; most of the field sits below the line, and that is the thesis. Bound to
+  `sitrep.all`, so nothing on it is invented. 2D canvas, 30fps cap, paused
+  off-screen, static under reduced motion.
+- **`MarketPulse`** — SPY, QQQ and the seven sector proxies over the *same*
+  window as the cards, from the same cached `windowStats`. A reader told NVDA
+  fell 6% could not previously tell whether that was NVDA or was everything.
+- **`Shell`** — a collapsible rail replacing the top bar, with the three views
+  separated from the tools, collapse state persisted, and the same links
+  rendered as a top bar below `lg`.
+- **Route-level skeletons** shaped like the cards they replace, a lift chart on
+  the track record, a tick-marked scrubber on replay, stat tiles on the
+  pipeline page, and grouped columns on positions.
+
+### Fixed
+
+- **Unlayered CSS silently defeated Tailwind's positioning.** A rule lifting
+  `main`/`aside`/`header`/`nav` above the ground set `position: relative`, and
+  because everything in `globals.css` is unlayered it beat the `fixed` utility
+  on the mobile navigation bar regardless of specificity. The bar dropped into
+  normal flow and squeezed `<main>` to **40px**: below `lg` the app rendered as
+  an empty screen. The ground sits at `z-index: -1` now and touches no
+  element's position.
+- **The attention field could render as blank space.** The canvas painted only
+  from inside the animation loop, and the loop was gated on a `running` flag
+  the `IntersectionObserver` could clear without ever being able to restore —
+  one "not intersecting" report while the page was still settling left it off
+  permanently. The picture is now drawn once, unconditionally, before any loop
+  exists; the drift is decoration on top of it. **Decoration must never decide
+  whether the data appears.**
+- **The loading skeleton claimed the `main` landmark.** As a route-level
+  Suspense fallback it is in the document at the same time as the page
+  streaming in behind it — two `main` landmarks at once, invalid for assistive
+  tech, and it broke two browser journeys that address the page by landmark.
+  Found by the tests, fixed in the component rather than in the tests.
+- **The lift chart rendered every bar one row below its label.** The baseline
+  was a grid item spanning all rows, and the cell it occupied displaced the
+  first bar. Rewritten so the marker lives inside each bar's own track, where
+  it cannot desynchronise from what it measures.
+- **The field scaled from zero**, squashing every point into the top third and
+  hiding the gaps between names — which is the whole comparison. Now anchored
+  to the range actually present.
+- **The pulse strip overflowed** into a horizontal scrollbar across the hero
+  with the last tile cut in half. A strip you have to drag is one nobody reads.
+- **Positions left half the page empty** when only one intent was stated.
+
+### Exposed
+
+- **Two sparklines shared one gradient.** SVG ids are document-global, so a
+  hardcoded id meant the second line silently took the first one's colours — a
+  falling line drawn green. `useId` would fix it and would also make the module
+  client-only, which it is not: server pages render sparklines directly. There
+  are only ever two gradients, so they are named by direction.
+- **An inline transform beats a stylesheet one.** The cursor tilt would have
+  silently cancelled `.card-lift`'s elevation the moment the pointer moved, so
+  the lift is composed into the same transform.
+- **Reduced motion was honoured in three different places** — a global CSS
+  rule, and two separate `matchMedia` checks. Guarantees spread across three
+  mechanisms rot quietly, and the people they fail are the least likely to
+  report it. Now covered by a test asserting the field is both *painted* and
+  *byte-identical over time*: 12 browser journeys became **13**, deliberately.
+
+### Verification
+
+`tsc` clean · **227** unit tests · **13** browser journeys · **83**
+infrastructure checks (30 + 12 + 27 + 14, unchanged) · clean production build.
+
+---
+
 ## Session 14 — a position that vanished when the price was quiet
 
 ### Fixed
