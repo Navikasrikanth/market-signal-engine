@@ -8,7 +8,11 @@ import {
   MIN_THEME_MEMBERS,
   type ThemeMember,
 } from '../theme'
-import { buildNarrative, type NarrativeInput } from '../narrative'
+import {
+  absenceSummary,
+  buildNarrative,
+  type NarrativeInput,
+} from '../narrative'
 import { rng } from '../testing/synthetic'
 
 /**
@@ -471,5 +475,66 @@ describe('buildNarrative', () => {
       input({ themes: [], marketReturn: -0.032, marketSigmas: -2.4, breadth: 0.82 }),
     )
     expect(n.inputs).toMatchObject({ breadth: 0.82, marketSigmas: -2.4 })
+  })
+})
+
+describe('absenceSummary', () => {
+  const base = {
+    sessions: 53,
+    bigMovers: 0,
+    largestMovePct: 0,
+    largestMoveSymbol: null,
+    themesFormed: 0,
+    earningsReported: 0,
+    roundTrips: 0,
+  }
+
+  it('counts, and never characterises', () => {
+    const text = absenceSummary({
+      ...base,
+      bigMovers: 6,
+      themesFormed: 1,
+      earningsReported: 2,
+    })!
+
+    expect(text).toBe(
+      'In 53 trading sessions: 6 names moved more than 20%, 1 theme formed and 2 names reported earnings.',
+    )
+    // Every clause is a count of something already computed. No adjective can
+    // appear here, because nothing generates one.
+    expect(text).not.toMatch(/significant|notable|sharp|dramatic|volatile/i)
+  })
+
+  it('omits zero clauses rather than writing them', () => {
+    // "0 themes formed" is noise that hides the clauses that are not zero.
+    const text = absenceSummary({ ...base, bigMovers: 3 })!
+    expect(text).toBe('In 53 trading sessions: 3 names moved more than 20%.')
+    expect(text).not.toMatch(/0/)
+  })
+
+  it('falls back to the largest move when nothing cleared 20%', () => {
+    const text = absenceSummary({
+      ...base,
+      largestMovePct: -0.083,
+      largestMoveSymbol: 'INTC',
+    })!
+    expect(text).toMatch(/largest move was INTC at -8.3%/)
+  })
+
+  it('says nothing when there is nothing countable to say', () => {
+    expect(absenceSummary(base)).toBeNull()
+    expect(absenceSummary({ ...base, sessions: 0, bigMovers: 4 })).toBeNull()
+  })
+
+  it('gets singular and plural right', () => {
+    const one = absenceSummary({
+      ...base,
+      sessions: 1,
+      bigMovers: 1,
+      themesFormed: 1,
+    })!
+    expect(one).toMatch(/In 1 trading session:/)
+    expect(one).toMatch(/1 name moved/)
+    expect(one).toMatch(/1 theme formed/)
   })
 })

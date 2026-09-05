@@ -271,6 +271,54 @@ test('replay runs an arbitrary window and never invents a cause', async ({
   expect(semis).not.toMatch(/caused/i)
 })
 
+test('the brief shows the path, not only the endpoints', async ({ page }) => {
+  await signIn(page)
+
+  // A one-line shape of the absence, before any card.
+  await expect(page.getByText(/^In \d+ trading sessions?:/)).toBeVisible()
+
+  // And where the price went in between. "Up 5% since you looked" and "up 5%,
+  // having been 20% higher" are the same number and different fortnights.
+  await expect(page.getByText(/PEAKED|BOTTOMED/).first()).toBeVisible()
+  await expect(
+    page.getByText(/(above|below) where it sits now/).first(),
+  ).toBeVisible()
+})
+
+test('the attention budget is adjustable, and signing out is possible', async ({
+  page,
+}) => {
+  await signIn(page)
+  const before = await page.locator('article').count()
+
+  await page.getByRole('link', { name: 'manage watchlist' }).click()
+
+  // The budget was read from user settings from the start while being settable
+  // only by editing the database.
+  const select = page.locator('select').last()
+  await Promise.all([
+    page.waitForResponse((r) => r.url().includes('/api/settings') && r.ok()),
+    select.selectOption('3'),
+  ])
+
+  await page.goto('/')
+  await expect(page.locator('article')).toHaveCount(Math.min(3, before))
+
+  // Put it back, then prove a user can actually leave.
+  await page.goto('/watchlist')
+  await Promise.all([
+    page.waitForResponse((r) => r.url().includes('/api/settings') && r.ok()),
+    page.locator('select').last().selectOption('5'),
+  ])
+
+  await page.getByRole('button', { name: 'Sign out', exact: true }).click()
+  await expect(page).toHaveURL(/\/login/)
+
+  // And that the session is genuinely gone, not just navigated away from.
+  await page.goto('/')
+  await expect(page).toHaveURL(/\/login/)
+})
+
 test('the pipeline page reports data quality and queue state', async ({
   page,
 }) => {

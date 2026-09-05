@@ -154,6 +154,17 @@ function Header({
             </p>
           )}
 
+          {/*
+            The shape of the absence, before any card. Counts of things already
+            computed - a reader arriving after ten weeks should not have to
+            parse five ranked cards to learn what kind of ten weeks it was.
+          */}
+          {sitrep.absenceSummary && (
+            <p className="mt-3 text-[15px] leading-snug text-[color:var(--ink-2)]">
+              {sitrep.absenceSummary}
+            </p>
+          )}
+
           <div className="mt-2 flex items-center justify-between gap-4">
             <p className="text-lg text-[color:var(--ink-2)]">
               {sitrep.items.length === 0

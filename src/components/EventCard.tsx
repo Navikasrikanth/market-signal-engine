@@ -144,6 +144,8 @@ export function EventCard({
         </span>
       </div>
 
+      <Path peak={item.peak} trough={item.trough} />
+
       <Coverage items={item.coverage} />
 
       <WhyPanel
@@ -221,5 +223,59 @@ function Coverage({ items }: { items: SitrepItem['coverage'] }) {
         ))}
       </ul>
     </div>
+  )
+}
+
+/**
+ * Where it went while you were not looking.
+ *
+ * The card already shows where the price started and where it ended. Between
+ * those two numbers is everything that actually happened, and a user who was
+ * away for ten weeks missed all of it: a name that is up 5% today may have
+ * been up 25% and given it back, which is a different thing to know than the
+ * 5%.
+ *
+ * Only rendered when the extreme was not today. A peak that is the current
+ * price is not a path, it is the price.
+ */
+function Path({
+  peak,
+  trough,
+}: {
+  peak: SitrepItem['peak']
+  trough: SitrepItem['trough']
+}) {
+  if (!peak && !trough) return null
+
+  // One line, and only the side that is interesting: a name near its window
+  // high does not need to be told it also had a low.
+  const notable =
+    peak && trough
+      ? Math.abs(peak.fromNowPct) >= Math.abs(trough.fromNowPct)
+        ? peak
+        : trough
+      : (peak ?? trough)!
+
+  const above = notable.fromNowPct > 0
+  if (Math.abs(notable.fromNowPct) < 0.02) return null
+
+  return (
+    <p className="mt-2 text-xs text-[color:var(--ink-3)]">
+      <span className="font-mono text-[10px] tracking-wider">
+        {above ? 'PEAKED' : 'BOTTOMED'}
+      </span>{' '}
+      at{' '}
+      <span className="tabular text-[color:var(--ink-2)]">
+        ${notable.close.toFixed(2)}
+      </span>{' '}
+      on {notable.date} —{' '}
+      <span
+        style={{ color: above ? 'var(--up)' : 'var(--down)' }}
+        className="tabular"
+      >
+        {(Math.abs(notable.fromNowPct) * 100).toFixed(1)}%
+      </span>{' '}
+      {above ? 'above' : 'below'} where it sits now.
+    </p>
   )
 }

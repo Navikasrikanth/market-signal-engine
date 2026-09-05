@@ -1,6 +1,10 @@
 import { db } from './db'
 import { scoreSignals, explainContributions } from '@/engine/scorer'
-import { buildNarrative, type Narrative } from '@/engine/narrative'
+import {
+  absenceSummary,
+  buildNarrative,
+  type Narrative,
+} from '@/engine/narrative'
 import {
   MIN_SCORECARD_SAMPLE,
   SIGNAL_TO_DETECTOR,
@@ -16,7 +20,7 @@ import type {
   Signal,
 } from '@/engine/types'
 import { MARKET_BENCHMARK } from './universe'
-import { sessionsBehind, tradingDaysBetween } from './market-calendar'
+import { nyDate, sessionsBehind, tradingDaysBetween } from './market-calendar'
 import { cached, invalidateUser, TTL } from './cache'
 import { buildChronology, findCameAndWent } from './briefing'
 import { previousSignIn } from './auth'
@@ -73,6 +77,15 @@ export interface SitrepItem {
   /** Net move over the absence window, not just the last session. */
   windowReturnPct: number | null
   sigmas: number | null
+  /**
+   * The high and low reached DURING the absence, when they were not today.
+   *
+   * The endpoints hide the path: "up 5.5% since you looked" and "up 5.5%,
+   * having been 19% higher three weeks ago and given it all back" are the same
+   * two numbers describing completely different fortnights.
+   */
+  peak: { close: number; date: string; fromNowPct: number } | null
+  trough: { close: number; date: string; fromNowPct: number } | null
   lastClose: number
   asOf: string
   confidence: number
@@ -84,7 +97,6 @@ export interface SitrepItem {
   intent: Intent
   themeKey: string | null
   sparkline: number[]
-  isUpdate: boolean
 }
 
 export interface SitrepResult {
@@ -119,6 +131,11 @@ export interface SitrepResult {
   cameAndWent: Array<{ symbol: string; headline: string; date: string }>
   /** The visit before this one, for the opening line. */
   previousVisit: { at: Date; newDevice: boolean } | null
+  /**
+   * One sentence describing the shape of the absence, before any card.
+   * Null when there is nothing countable to say.
+   */
+  absenceSummary: string | null
   /**
    * Per-SIGNAL track record, so a reason can be shown next to how often that
    * kind of reason has preceded a real move. Keyed by signal key, which is what
@@ -385,6 +402,8 @@ async function assembleSitrep(userId: string): Promise<SitrepResult> {
       eventIds: instrumentEvents.map((e) => e.id),
       windowReturnPct: window.returnPct,
       sigmas: window.sigmas,
+      peak: window.peak,
+      trough: window.trough,
       lastClose: window.lastClose,
       asOf: window.asOf,
       confidence: worstConfidence,
@@ -395,7 +414,6 @@ async function assembleSitrep(userId: string): Promise<SitrepResult> {
       themeKey: instrumentEvents.find((e) => e.theme)?.theme?.scopeKey ?? null,
       sparkline: window.sparkline,
       coverage: [],
-      isUpdate: false,
     })
   }
 
@@ -522,6 +540,50 @@ async function assembleSitrep(userId: string): Promise<SitrepResult> {
   )
   const prior = await previousSignIn(userId)
 
+  // The shape of the absence, in one line. Counts of things already computed;
+  // a reader should not have to parse five cards to learn it.
+  const windowSessions = since
+    ? Math.max(
+        0,
+        tradingDaysBetween(since.toISOString().slice(0, 10), nyDate(now))
+          .length - 1,
+      )
+    : 0
+
+  const largest = items.reduce<SitrepItem | null>(
+    (best, i) =>
+      Math.abs(i.windowReturnPct ?? 0) > Math.abs(best?.windowReturnPct ?? 0)
+        ? i
+        : best,
+    null,
+  )
+
+  const summary = absenceSummary({
+    sessions: windowSessions,
+    bigMovers: items.filter((i) => Math.abs(i.windowReturnPct ?? 0) >= 0.2).length,
+
+    largestMovePct: largest?.windowReturnPct ?? 0,
+    largestMoveSymbol: largest?.symbol ?? null,
+    themesFormed: themes.length,
+    earningsReported: chronology.filter((c) => c.kind === 'earnings').length,
+    // A ROUND TRIP, not merely an excursion.
+    //
+    // The first version counted any name whose high or low sat 8% from today,
+    // which over 53 sessions was true of sixteen names out of seventeen - a
+    // clause true of nearly everything tells the reader nothing. A round trip
+    // is a path that went somewhere the endpoints genuinely hide: the
+    // excursion has to be large in absolute terms AND at least twice the net
+    // move, which is what separates "rose and gave it back" from "rose".
+    roundTrips: surfaced.filter((i) => {
+      const excursion = Math.max(
+        Math.abs(i.peak?.fromNowPct ?? 0),
+        Math.abs(i.trough?.fromNowPct ?? 0),
+      )
+      const net = Math.abs(i.windowReturnPct ?? 0)
+      return excursion >= 0.12 && excursion >= 2 * net
+    }).length,
+  })
+
   const freshness = await db.dataFreshness.findMany({
     orderBy: { lastSuccess: 'asc' },
     take: 1,
@@ -543,6 +605,7 @@ async function assembleSitrep(userId: string): Promise<SitrepResult> {
     snoozedCount: snoozedInstruments.size,
     chronology,
     cameAndWent,
+    absenceSummary: summary,
     previousVisit: prior
       ? {
           at: prior.at,
@@ -593,10 +656,24 @@ async function windowStats(instrumentId: string, since: Date | null) {
 }
 
 async function computeWindowStats(instrumentId: string, since: Date | null) {
+  // Load enough bars to actually COVER the absence.
+  //
+  // This was fixed at 40, which quietly broke the headline number for any
+  // long absence: a 75-day window spans about 52 sessions, so the baseline
+  // fell off the end of the array, `findIndex` returned 0, and "since you
+  // looked" was measured from the oldest bar loaded rather than from the
+  // cursor. The percentage was real; it just answered a different question
+  // than the label above it claimed.
+  const windowSessions = since
+    ? tradingDaysBetween(since.toISOString().slice(0, 10), nyDate(new Date()))
+        .length
+    : 0
+  const take = Math.min(400, Math.max(40, windowSessions + 5))
+
   const bars = await db.dailyBar.findMany({
     where: { instrumentId },
     orderBy: { barDate: 'desc' },
-    take: 40,
+    take,
     select: {
       barDate: true,
       closeAdj: true,
@@ -607,7 +684,15 @@ async function computeWindowStats(instrumentId: string, since: Date | null) {
   })
 
   if (bars.length === 0) {
-    return { returnPct: null, sigmas: null, lastClose: 0, asOf: '', sparkline: [] }
+    return {
+      returnPct: null,
+      sigmas: null,
+      lastClose: 0,
+      asOf: '',
+      sparkline: [],
+      peak: null,
+      trough: null,
+    }
   }
 
   const ascending = [...bars].reverse()
@@ -639,12 +724,40 @@ async function computeWindowStats(instrumentId: string, since: Date | null) {
       ? Math.log(last / from) / (sigma * Math.sqrt(sessions))
       : null
 
+  // The PATH, not just the endpoints.
+  //
+  // A returning user saw where the price ended and missed everything in
+  // between. "Up 5.5% since you looked" and "up 5.5%, having been 19% higher
+  // three weeks ago and given it all back" describe the same two numbers and
+  // completely different fortnights.
+  const windowBars = ascending.slice(baselineIndex)
+  let peak = windowBars[0]
+  let trough = windowBars[0]
+  for (const b of windowBars) {
+    if (Number(b.closeAdj) > Number(peak.closeAdj)) peak = b
+    if (Number(b.closeAdj) < Number(trough.closeAdj)) trough = b
+  }
+
+  const extreme = (b: (typeof windowBars)[number]) => ({
+    close: Number(b.closeAdj),
+    date: b.barDate.toISOString().slice(0, 10),
+    // How far today sits from that point, signed from today's perspective.
+    fromNowPct: last > 0 ? Number(b.closeAdj) / last - 1 : 0,
+  })
+
   return {
     returnPct,
     sigmas,
     lastClose: last,
     asOf: ascending[ascending.length - 1].asOf.toISOString(),
     sparkline: closes.slice(-20),
+    // Only worth reporting when the path went somewhere the endpoints do not
+    // show. A peak that IS today is not news.
+    peak: peak.barDate === windowBars[windowBars.length - 1].barDate ? null : extreme(peak),
+    trough:
+      trough.barDate === windowBars[windowBars.length - 1].barDate
+        ? null
+        : extreme(trough),
   }
 }
 
@@ -678,6 +791,7 @@ function emptyResult(displayName: string, attentionBudget: number): SitrepResult
     snoozedCount: 0,
     chronology: [],
     cameAndWent: [],
+    absenceSummary: null,
     previousVisit: null,
     trackRecord: {},
     belowBudget: 0,

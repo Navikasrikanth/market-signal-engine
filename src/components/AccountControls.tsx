@@ -1,0 +1,112 @@
+'use client'
+
+import { useRouter } from 'next/navigation'
+import { useState, useTransition } from 'react'
+
+/**
+ * Sign out, and adjust how much the brief will show.
+ *
+ * Both endpoints existed before this component did and nothing called them —
+ * a user could not sign out at all, and the attention budget was read from
+ * user settings while being settable only by editing the database.
+ *
+ * The budget is the one control that changes what the product *does*. A filter
+ * whose severity you cannot adjust is one you either accept or abandon.
+ */
+export function AccountControls({ budget }: { budget: number }) {
+  const router = useRouter()
+  const [pending, startTransition] = useTransition()
+  const [value, setValue] = useState(budget)
+  const [error, setError] = useState<string | null>(null)
+
+  async function post(url: string, body?: unknown, method = 'POST') {
+    setError(null)
+    const res = await fetch(url, {
+      method,
+      headers: { 'content-type': 'application/json' },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    })
+    if (!res.ok) {
+      setError('That did not work. Try again.')
+      return false
+    }
+    return true
+  }
+
+  async function changeBudget(next: number) {
+    setValue(next)
+    if (await post('/api/settings', { attentionBudget: next }, 'PATCH')) {
+      startTransition(() => router.refresh())
+    } else {
+      setValue(budget)
+    }
+  }
+
+  async function signOut(everywhere: boolean) {
+    const url = everywhere ? '/api/auth/logout-all' : '/api/auth/logout'
+    if (await post(url)) {
+      startTransition(() => router.push('/login'))
+    }
+  }
+
+  return (
+    <section className="rounded-lg border border-[color:var(--border)] bg-[color:var(--surface)] p-4">
+      <h2 className="mb-3 font-mono text-[10px] tracking-wider text-[color:var(--ink-3)]">
+        YOUR BRIEF
+      </h2>
+
+      <label className="flex flex-wrap items-center gap-3 text-sm">
+        <span className="text-[color:var(--ink-2)]">Show at most</span>
+        <select
+          value={value}
+          disabled={pending}
+          onChange={(e) => void changeBudget(Number(e.target.value))}
+          className="rounded-md border border-[color:var(--border-strong)] bg-[color:var(--surface-2)] px-2 py-1 text-xs text-[color:var(--ink)]"
+        >
+          {[3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
+            <option key={n} value={n}>
+              {n}
+            </option>
+          ))}
+        </select>
+        <span className="text-[color:var(--ink-2)]">names per brief</span>
+      </label>
+
+      <p className="mt-2 text-xs leading-relaxed text-[color:var(--ink-3)]">
+        Anything the engine flags beyond this is reported as a count rather than
+        hidden. Raising it does not find more; it only shows more of what was
+        already found.
+      </p>
+
+      <div className="mt-4 flex flex-wrap gap-2 border-t border-[color:var(--border)] pt-3">
+        <button
+          type="button"
+          onClick={() => void signOut(false)}
+          className="rounded-md border border-[color:var(--border-strong)] px-2.5 py-1 font-mono text-[11px] tracking-wide text-[color:var(--ink-2)] hover:border-[color:var(--accent)] hover:text-[color:var(--accent-ink)]"
+        >
+          Sign out
+        </button>
+        <button
+          type="button"
+          onClick={() => void signOut(true)}
+          title="Revoke every session on every device"
+          aria-label="Sign out everywhere"
+          className="rounded-md border border-[color:var(--border-strong)] px-2.5 py-1 font-mono text-[11px] tracking-wide text-[color:var(--ink-3)] hover:border-[color:var(--down)] hover:text-[color:var(--down)]"
+        >
+          Sign out everywhere
+        </button>
+      </div>
+
+      <p className="mt-2 text-xs text-[color:var(--ink-3)]">
+        Signing out everywhere revokes every session on every device — the one
+        control that matters if a password is exposed.
+      </p>
+
+      {error && (
+        <p className="mt-2 text-xs" style={{ color: 'var(--down)' }}>
+          {error}
+        </p>
+      )}
+    </section>
+  )
+}

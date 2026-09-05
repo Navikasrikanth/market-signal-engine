@@ -1,5 +1,6 @@
 import 'dotenv/config'
 import { db } from '../src/lib/db'
+import { bumpGeneration, closeCache } from '../src/lib/cache'
 import { buildSitrep, ensureCursors } from '../src/lib/sitrep'
 
 /**
@@ -31,6 +32,14 @@ async function main() {
   // demo's state: a run of bad passwords from a previous session would
   // otherwise lock the account out and make the next demo look broken.
   await db.loginAttempt.deleteMany({ where: { email: user.email } })
+
+  // Retire every cached read.
+  //
+  // This script rewrites cursors and event state directly through Prisma, so
+  // nothing in the request path knows the world changed underneath it - the
+  // demo would keep serving a brief assembled before the reset. Resetting the
+  // demo has to reset the cache too, or "npm run demo:reset" quietly does not.
+  await bumpGeneration()
 
   const planted = await ensureCursors(user.id, since)
 
@@ -121,4 +130,7 @@ main()
     console.error(e)
     process.exit(1)
   })
-  .finally(() => db.$disconnect())
+  .finally(async () => {
+    await closeCache()
+    await db.$disconnect()
+  })

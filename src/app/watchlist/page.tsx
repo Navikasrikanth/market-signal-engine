@@ -3,6 +3,8 @@ import Link from 'next/link'
 import { currentUser } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { WatchlistManager } from '@/components/WatchlistManager'
+import { AccountControls } from '@/components/AccountControls'
+import { DEFAULT_ATTENTION_BUDGET } from '@/lib/sitrep'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,6 +20,13 @@ export const dynamic = 'force-dynamic'
 export default async function WatchlistPage() {
   const user = await currentUser()
   if (!user) redirect('/login')
+
+  const settings = (
+    await db.user.findUniqueOrThrow({
+      where: { id: user.id },
+      select: { settings: true },
+    })
+  ).settings as { attentionBudget?: number } | null
 
   const watchlist = await db.watchlist.findFirst({
     where: { userId: user.id },
@@ -73,6 +82,12 @@ export default async function WatchlistPage() {
         }))}
         available={available.filter((a) => !watched.has(a.symbol))}
       />
+
+      <div className="mt-6">
+        <AccountControls
+          budget={settings?.attentionBudget ?? DEFAULT_ATTENTION_BUDGET}
+        />
+      </div>
     </main>
   )
 }

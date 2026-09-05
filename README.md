@@ -30,7 +30,7 @@ Open http://localhost:3000 and sign in as `demo@sitrep.local` / `sitrep-demo-202
 | `/admin/pipeline` | Ingest runs, data quality, engine version |
 
 ```bash
-npm test              # 201 unit tests, engine + ingestion
+npm test              # 216 unit tests, engine + ingestion
 npm run test:e2e      # 4 Playwright journeys through a real browser
 npm run calibrate     # replay history, rewrite docs/calibration.md
 npm run verify        # 69 checks: requirements, auth, ingestion, cache
@@ -80,7 +80,7 @@ The argument: **the product is defined by what it refuses to show.** Calibration
 
 | | means |
 |---|---|
-| below your attention budget | the engine flagged it; the budget cut it |
+| below your attention budget | the engine flagged it; the budget cut it (adjustable, 3–10) |
 | within normal range | the engine looked and found nothing |
 | snoozed | *you* silenced it; still pending |
 | came and went | it happened and resolved while you were away |
@@ -300,6 +300,8 @@ Across the committed dataset that leaves **8 genuine conflicts in 33,616 bars** 
 
 - **Loading the brief never advances it.** Otherwise glancing on a phone would silently wipe the brief waiting on a laptop.
 - **Recency decay runs from the cursor, not the clock.** Every event past the cursor is unseen *by definition*. Decaying from `now` meant a 5σ move three days into a ten-week absence hit the floor and was filed as noise — precisely what the user came back to learn.
+- **The path, not just the endpoints.** "Up 5.5% since you looked" and "up 5.5%, having been 19% higher three weeks ago and given it all back" are the same two numbers describing completely different fortnights. Each card reports the high or low reached *during* the absence, when it was not today.
+- **One line before any card.** *"In 53 trading sessions: 6 names moved more than 20% and 2 went materially further than they finished."* Every clause is a count of something already computed — no adjectives, because nothing generates one.
 - **Window moves, not daily moves.** "NVDA is down 0.4% today" hides what actually happened: down 8% since you last looked.
 
 **Two ways to clear a card, and they are not the same operation.** *Mark seen* means "I have absorbed this" and moves the cursor, so the next brief measures from now. *Snooze* means "not now" and moves nothing — the window keeps growing and the event returns, with its original timestamp, when the snooze lapses. Conflating them would quietly destroy the thing the product is built around.
@@ -308,7 +310,7 @@ The brief therefore reports **three** distinct populations, never folded togethe
 
 | | means |
 |---|---|
-| below your attention budget | the engine flagged it; the budget cut it |
+| below your attention budget | the engine flagged it; the budget cut it (adjustable, 3–10) |
 | within normal range | the engine looked and found nothing |
 | snoozed | *you* silenced it; still pending, not cleared |
 
@@ -379,7 +381,7 @@ Run `npx tsx scripts/verify-auth.ts` — 12 checks against real Postgres, includ
 
 ## Testing
 
-201 unit tests, 8 browser journeys, and 69 checks against real Postgres and Redis across four verification suites — requirements, auth, ingestion and cache.
+216 unit tests, 10 browser journeys, and 69 checks against real Postgres and Redis across four verification suites — requirements, auth, ingestion and cache.
 
 Every detector has a **firing fixture and a must-not-fire fixture** — a detector that only ever fires is indistinguishable from a broken one, and on a product whose promise is filtering noise, false positives are the expensive failure.
 
@@ -393,7 +395,7 @@ Several tests exist specifically to pin down bugs that were written and then cau
 - a 2:1 split deliberately passes the validator — documented as a limitation rather than faked
 
 The browser suite is deliberately thin: four journeys covering the three
-minimums plus replay. Broad UI coverage of a product whose logic already has 201
+minimums plus replay. Broad UI coverage of a product whose logic already has 216
 unit tests would be slow to run, slower to maintain, and would mostly re-test
 React. It did earn its place immediately though — it caught the acknowledge
 button hiding a card optimistically without ever re-reading the brief, so the
