@@ -10,6 +10,33 @@ look for.
 
 ---
 
+## Session 14 — a position that vanished when the price was quiet
+
+### Fixed
+
+- **A stated position disappeared below a 2% move.** Reported from the product:
+  TSLA set to HIGH priority and HOLDING, window narrowed to a week — and the
+  brief did not say it was held. Reproduced exactly: TSLA moved **+1.53%**, and
+  `frameForPosition` returned `null` under its 2% threshold, taking the chip
+  and the sentence with it.
+
+  The threshold conflated two different things. Whether a move is worth calling
+  *good or bad news* depends on its size. Whether you **hold** something is a
+  fact about you, and does not stop being true because the price was quiet — a
+  card showing the position on four names and omitting it on the fifth reads as
+  broken, not restrained.
+
+  A quiet move now keeps its label, takes a neutral tone, and says the useful
+  thing: *"You hold this. The price has barely moved since you last looked —
+  1.5%, so whatever put this on your brief, it was not that."* Which is real
+  information: the alert was about volume, not price.
+
+- **A test encoded the bug.** `says nothing about a move too small to reframe`
+  asserted the broken behaviour, so the suite defended it. Replaced with what
+  should happen, plus a case covering every stated intent.
+
+---
+
 ## Session 13 — a cursor you can rewind
 
 ### Built

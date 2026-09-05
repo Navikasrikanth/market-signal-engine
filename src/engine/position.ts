@@ -53,14 +53,58 @@ function pct(x: number): string {
   return `${Math.abs(x * 100).toFixed(1)}%`
 }
 
-/** Below this the move is not worth reframing; it is noise either way. */
+/** The opening clause, for a position whose price did nothing. */
+const STILL: Record<Intent, string> = {
+  HOLDING: 'You hold this.',
+  CONSIDERING_BUY: 'You were considering buying.',
+  HEDGE: 'This is a hedge.',
+  THEMATIC: 'You are watching this as a theme.',
+  NONE: '',
+}
+
+/** Chip text, without the direction suffix. */
+const LABEL_STEM: Record<Intent, string> = {
+  HOLDING: 'HOLDING',
+  CONSIDERING_BUY: 'CONSIDERING',
+  HEDGE: 'HEDGE',
+  THEMATIC: 'THEME WATCH',
+  NONE: '',
+}
+
+/**
+ * Below this, the MOVE is not worth characterising as good or bad news.
+ *
+ * It does not silence the position. That distinction was originally missed:
+ * anything under 2% returned null, so a name you had declared as HOLDING lost
+ * its label entirely — TSLA sat on the brief for a volume spike, moved 1.5%
+ * over the week, and read as though no position had ever been stated.
+ *
+ * Whether you hold something is a fact about YOU. It does not become untrue
+ * because the price was quiet, and a card that shows the position on four
+ * names and omits it on the fifth looks broken rather than restrained.
+ */
 const MATERIAL = 0.02
 
 export function frameForPosition(
   ctx: PositionContext,
 ): PositionFraming | null {
   const move = ctx.returnPct
-  if (move === null || Math.abs(move) < MATERIAL) return null
+
+  // No stated intent is the only reason to say nothing at all: without one
+  // there is no position to read the move against, and the card already says
+  // what happened. Inventing a frame would be worse than leaving it plain.
+  if (ctx.intent === 'NONE') return null
+  if (move === null) return null
+
+  // Quiet move, stated position: still label it, and say the useful thing —
+  // that whatever put this name on the brief, it was not the price.
+  if (Math.abs(move) < MATERIAL) {
+    return {
+      text: `${STILL[ctx.intent]} The price has barely moved since you last looked — ${pct(move)}, so whatever put this on your brief, it was not that.`,
+      tone: 'neutral',
+      label: `${LABEL_STEM[ctx.intent]} · FLAT`,
+    }
+  }
 
   const up = move > 0
 
@@ -132,12 +176,6 @@ export function frameForPosition(
       }
     }
 
-    case 'NONE':
-    default:
-      // No stated intent means no basis for a claim about what it means. The
-      // card already says what happened; inventing a frame would be worse than
-      // leaving it plain.
-      return null
   }
 }
 

@@ -83,8 +83,34 @@ describe('frameForPosition', () => {
     expect(frameForPosition(ctx({ intent: 'NONE' }))).toBeNull()
   })
 
-  it('says nothing about a move too small to reframe', () => {
-    expect(frameForPosition(ctx({ returnPct: 0.004 }))).toBeNull()
+  it('keeps the position label when the price barely moved', () => {
+    // The bug this replaces: anything under 2% returned null, so a name you
+    // had declared as HOLDING lost its label entirely. TSLA sat on the brief
+    // for a volume spike, moved 1.5% over the week, and read as though no
+    // position had ever been stated.
+    //
+    // Whether you hold something is a fact about YOU. It does not stop being
+    // true because the price was quiet.
+    const flat = frameForPosition(ctx({ returnPct: 0.015 }))!
+
+    expect(flat.label).toMatch(/^HOLDING/)
+    expect(flat.tone).toBe('neutral')
+    expect(flat.text).toMatch(/You hold this\./)
+    // And it says the useful thing: the alert was about something else.
+    expect(flat.text).toMatch(/barely moved/)
+    expect(flat.text).toMatch(/it was not that/)
+  })
+
+  it('labels a quiet move for every stated intent', () => {
+    for (const intent of ['HOLDING', 'CONSIDERING_BUY', 'HEDGE', 'THEMATIC'] as const) {
+      const f = frameForPosition(ctx({ intent, returnPct: -0.008 }))!
+      expect(f).not.toBeNull()
+      expect(f.label.length).toBeGreaterThan(0)
+      expect(f.tone).toBe('neutral')
+    }
+  })
+
+  it('still says nothing without a usable move', () => {
     expect(frameForPosition(ctx({ returnPct: null }))).toBeNull()
   })
 
