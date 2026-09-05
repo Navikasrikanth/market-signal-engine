@@ -66,6 +66,10 @@ export function AccountControls({ budget }: { budget: number }) {
       <label className="flex flex-wrap items-center gap-3 text-sm">
         <span className="text-[color:var(--ink-2)]">Show at most</span>
         <select
+          // Named explicitly. The surrounding text reads as a sentence, so the
+          // control had no accessible name of its own and could only be found
+          // by position - which broke the moment it moved up the page.
+          aria-label="Names per brief"
           value={value}
           disabled={pending}
           onChange={(e) => void changeBudget(Number(e.target.value))}

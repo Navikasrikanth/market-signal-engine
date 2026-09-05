@@ -298,7 +298,7 @@ test('the attention budget is adjustable, and signing out is possible', async ({
 
   // The budget was read from user settings from the start while being settable
   // only by editing the database.
-  const select = page.locator('select').last()
+  const select = page.getByLabel('Names per brief')
   await Promise.all([
     page.waitForResponse((r) => r.url().includes('/api/settings') && r.ok()),
     select.selectOption('3'),
@@ -311,7 +311,7 @@ test('the attention budget is adjustable, and signing out is possible', async ({
   await page.goto('/watchlist')
   await Promise.all([
     page.waitForResponse((r) => r.url().includes('/api/settings') && r.ok()),
-    page.locator('select').last().selectOption('5'),
+    page.getByLabel('Names per brief').selectOption('5'),
   ])
 
   await page.getByRole('button', { name: 'sign out', exact: true }).click()

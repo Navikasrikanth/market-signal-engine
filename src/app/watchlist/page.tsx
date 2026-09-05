@@ -63,6 +63,21 @@ export default async function WatchlistPage() {
         cares about deterioration.
       </p>
 
+      {/*
+        Settings first, inventory second.
+        
+        These sat below the list, which meant scrolling past seventeen rows to
+        reach them - so in practice nobody would. Same failure as sign-out
+        living at the bottom of this page: built, rendering, and unreachable.
+        The list is the inventory; these are the controls that change what the
+        product does with it.
+      */}
+      <div className="mt-6">
+        <AccountControls
+          budget={settings?.attentionBudget ?? DEFAULT_ATTENTION_BUDGET}
+        />
+      </div>
+
       <WatchlistManager
         items={(watchlist?.items ?? []).map((i) => ({
           symbol: i.instrument.symbol,
@@ -74,11 +89,6 @@ export default async function WatchlistPage() {
         available={available.filter((a) => !watched.has(a.symbol))}
       />
 
-      <div className="mt-6">
-        <AccountControls
-          budget={settings?.attentionBudget ?? DEFAULT_ATTENTION_BUDGET}
-        />
-      </div>
     </main>
   )
 }
