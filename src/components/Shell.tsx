@@ -249,10 +249,23 @@ export function Shell({
           bar is `display:none` and this padding disappears with it — which
           also keeps it out of the accessibility tree, so the duplicated nav
           links never become a second match for the same accessible name. */}
-      <div className="min-w-0 flex-1 pt-12 lg:pt-0">{children}</div>
+      {/*
+        Keyed on the path, so React tears the subtree down and remounts it on
+        every navigation — which restarts the entrance animation. That is the
+        whole page transition: no router events, no exit animation to
+        coordinate, and nothing that can leave the app stuck mid-transition if
+        a navigation is interrupted.
+      */}
+      <div key={pathname} className="page-in min-w-0 flex-1 pt-12 lg:pt-0">
+        {children}
+      </div>
     </div>
   )
 }
+
+/** Row height and gap, in pixels. The marker's travel is computed from these. */
+const ROW_H = 36
+const ROW_GAP = 2
 
 function Group({
   items,
@@ -265,38 +278,63 @@ function Group({
   collapsed: boolean
   pathname: string
 }) {
+  const activeIndex = items.findIndex((item) =>
+    item.href === '/' ? pathname === '/' : pathname.startsWith(item.href),
+  )
+
   return (
     <nav className="px-3">
       {!collapsed && <p className="meta mb-2 px-2">{label}</p>}
-      <ul className="flex flex-col gap-0.5">
-        {items.map((item) => {
-          const active =
-            item.href === '/' ? pathname === '/' : pathname.startsWith(item.href)
+
+      <ul className="relative flex flex-col" style={{ gap: ROW_GAP }}>
+        {/*
+          One marker for the whole group, moved with a transform.
+          
+          It was previously a bar per row, toggled between the accent colour and
+          transparent — which cannot slide, because there is nothing continuous
+          to animate: the old bar fades out while a different element fades in.
+          A single element that travels is both cheaper (one composited
+          transform, no paint) and the only version that can actually move
+          between destinations.
+          
+          Hidden entirely when no item in this group is active, rather than
+          parked at row zero pointing at a page you are not on.
+        */}
+        <span
+          aria-hidden
+          className="absolute -left-3 w-[2px] rounded-r"
+          style={{
+            height: 20,
+            top: 8,
+            background: 'var(--accent)',
+            boxShadow: '0 0 10px 0 var(--accent)',
+            opacity: activeIndex < 0 ? 0 : 1,
+            transform: `translateY(${Math.max(0, activeIndex) * (ROW_H + ROW_GAP)}px)`,
+            transition:
+              'transform var(--dur-slow) var(--ease-spring), opacity var(--dur-base) var(--ease-out)',
+          }}
+        />
+
+        {items.map((item, i) => {
+          const active = i === activeIndex
           return (
-            <li key={item.href} className="relative">
+            <li key={item.href}>
               <Link
                 href={item.href}
                 aria-current={active ? 'page' : undefined}
                 title={collapsed ? item.label : item.hint}
-                className="group flex items-center gap-3 rounded-[var(--r-md)] px-2 py-2 transition-colors"
+                className="group flex items-center gap-3 rounded-[var(--r-md)] px-2 transition-[background,color,transform] duration-200 hover:translate-x-0.5"
                 style={{
+                  height: ROW_H,
                   background: active ? 'var(--accent-dim)' : 'transparent',
                   color: active ? 'var(--accent-ink)' : 'var(--ink-3)',
+                  transitionTimingFunction: 'var(--ease-out)',
                 }}
               >
-                {/* The active marker. A short bar rather than a full border, so
-                    the eye finds the current page without the row shouting. */}
-                <span
-                  aria-hidden
-                  className="absolute top-1/2 -left-3 h-5 w-[2px] -translate-y-1/2 rounded-r"
-                  style={{
-                    background: active ? 'var(--accent)' : 'transparent',
-                    transition: 'background var(--dur-base) var(--ease-out)',
-                  }}
-                />
                 <svg
                   viewBox="0 0 20 20"
-                  className="size-[18px] shrink-0 transition-transform duration-200 group-hover:scale-110"
+                  className="size-[18px] shrink-0 transition-transform duration-300 group-hover:-rotate-6 group-hover:scale-110"
+                  style={{ transitionTimingFunction: 'var(--ease-spring)' }}
                   fill="none"
                   stroke="currentColor"
                   strokeWidth="1.5"

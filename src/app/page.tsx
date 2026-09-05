@@ -85,7 +85,7 @@ export default async function Page() {
         </>
       )}
 
-      <div className="mt-8 flex flex-col gap-4">
+      <div className="reveal mt-8 flex flex-col gap-4">
         <Chronology
           entries={sitrep.chronology}
           cameAndWent={sitrep.cameAndWent}

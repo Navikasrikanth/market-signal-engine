@@ -10,6 +10,106 @@ look for.
 
 ---
 
+## Session 16 - motion, and the field in three dimensions
+
+Still branch `ui-overhaul`, still look-and-feel only. `npm run verify` remains
+**83**, so nothing behind the interface moved.
+
+### Built
+
+- **The attention field is now a 3D scene.** Every watched name stands on a
+  ground grid at a height equal to its attention score, and the budget is a
+  translucent plane cutting through the field. Points break the surface or sit
+  under it. Hand-rolled perspective - yaw, pitch, a focal divide, painter's
+  algorithm with the plane drawn *between* the points below it and the points
+  above it, so the surface genuinely occludes. No Three.js, no WebGL, no
+  dependency.
+  - **One axis carries meaning: height is attention score.** The x/z grid is
+    layout and says nothing, which is written at the top of the file so nobody
+    later reads depth as significance.
+  - The camera drifts slowly and leans towards the cursor, easing rather than
+    tracking, so it feels weighted instead of twitchy.
+- **Real 3D on the cards.** Perspective on an ancestor and `preserve-3d` on the
+  card, so the layers inside genuinely stand at different depths - symbol and
+  score at the front, body text behind, the severity rail proud of the face.
+  The parallax falls out of the geometry rather than being animated by hand.
+  A sheen sweeps across the surface as the card turns, driven by the same
+  pointer values as the spotlight, so there is one handler and not two.
+- **A motion vocabulary**: a spring curve for things the user just *did*, the
+  decelerating curve for anything that moves on its own. Buttons lift, shine
+  once on hover, and compress on press; rows slide; sparklines grow under the
+  cursor; bars grow from their baseline with a composited `scaleX`, never a
+  width.
+- **A sliding rail marker.** One element that travels between destinations,
+  replacing a per-row bar toggled between accent and transparent - a thing that
+  cannot slide, because there is nothing continuous to animate.
+- **Scroll-driven reveals** via `animation-timeline: view()` - no observer, no
+  state, nothing on the scroll path - and a page transition keyed on the
+  pathname, so a navigation restarts the entrance and no exit animation has to
+  be coordinated.
+
+### Fixed
+
+- **The scene clipped its own tallest points** - three times, each time after a
+  constant was tuned until the picture happened to fit the canvas being looked
+  at. The names being cropped were always the highest-scoring ones, which are
+  what the picture exists to show. It now **measures itself**: projects the
+  whole field at the resting camera and at both extremes of the lean, takes the
+  extent including the room labels need, and solves for a scale and offset that
+  fit both axes. Recomputed on resize only, so it is stable while the camera
+  moves.
+- **The scene was centred on the world origin, not on the drawing.** With a
+  yawed camera those are different points, and the field sat left with a band
+  of dead canvas beside it.
+- **`--tilt` delivered half of what it said.** The maths took `(px - 0.5)`, so
+  an 8 degree token produced 4 degrees at the edge - the sort of quiet
+  discrepancy that later gets "fixed" by doubling the constant instead of the
+  arithmetic.
+- **Scroll reveals could stick at `opacity: 0`.** A percentage range measures
+  against the element's own height, so a block taller than the viewport faded
+  in over most of a screenful and sat half-transparent while being read. Now a
+  fixed 240px of travel, which behaves identically for a caption and for a
+  forty-entry chronology.
+- **Held-back points were nearly invisible**, which argued the opposite of what
+  the picture is for: the field looked like five names floating over nothing
+  rather than five of eleven.
+
+### Exposed
+
+- **Reduced motion had a third hole.** The card tilt is an inline transform
+  written from a pointer handler, so the global CSS rule cannot reach it, and
+  collapsing a transition to 0.01ms does not remove a transform - it makes the
+  card *snap* into the tilt, which is worse than the animation it was meant to
+  spare. Every 3D rule is now switched off by name under reduced motion, and
+  the test hovers a card and asserts the transform is identity.
+- **`perspective()` in the element's own transform cannot produce depth.** Each
+  card got its own vanishing point directly behind itself, so nothing inside
+  could parallax against anything else. The camera has to live on an ancestor.
+- **A fit that is not tested is a fit that regresses.** The clipping bug came
+  back twice under different constants, so the invariant is now a test that
+  reads the canvas pixels at seven widths from 360px to 1600px and asserts no
+  ink touches the border - and that the scene did not "fit" by rendering
+  nothing. Reading pixels rather than asserting on the fit variables is the
+  point: the arithmetic was right on the pass where the *labels* overhung.
+
+### Verification
+
+`tsc` clean, **227** unit tests, **14** browser journeys (13 to 14: the framing
+invariant), **83** infrastructure checks unchanged, clean build.
+
+**Measured, not assumed** - 3s sample on the brief while sweeping the pointer
+across the field and cards with tilt, sheen and camera lean all live:
+
+| | |
+|---|---|
+| median frame | **16.7ms** |
+| p95 frame | **16.7ms** |
+| worst frame | 17ms |
+| frames over 20ms | **0** |
+| long tasks over 50ms | **0** |
+
+---
+
 ## Session 15 — the UI overhaul
 
 Branch `ui-overhaul`. Scope was explicit: look and feel only — no backend, no

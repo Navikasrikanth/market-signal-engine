@@ -74,8 +74,30 @@
   --dur-fast: 150ms;
   --dur-base: 220ms;
   --dur-slow: 320ms;
+  --dur-lazy: 520ms;
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  /*
+   * A spring, as a curve.
+   *
+   * Overshoots slightly and settles back. Reserved for things the user just
+   * DID — a press, a card lifting under the cursor — because overshoot reads
+   * as a reaction. Anything that moves on its own uses `--ease-out` instead;
+   * a page that springs at you unprompted feels unserious, and this one is
+   * about money.
+   */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /*
+   * How far a card leans at its edge, and how far its front layer floats.
+   *
+   * 8 degrees is deliberately near the top of what still reads as a physical
+   * object: past about ten, text on the far edge starts to look distorted
+   * rather than foreshortened, and a page of numbers cannot afford that.
+   */
+  --tilt: 8deg;
+  --lift-z: 54px;
 
   /* ------------------------------------------------------------------ shell */
   --rail-w: 232px;
@@ -229,16 +251,81 @@ body::after {
   border-radius: var(--r-lg);
   box-shadow: var(--elev-1);
   transition:
-    transform var(--dur-base) var(--ease-out),
-    box-shadow var(--dur-base) var(--ease-out),
+    transform var(--dur-slow) var(--ease-spring),
+    box-shadow var(--dur-slow) var(--ease-out),
     border-color var(--dur-base) var(--ease-out);
 }
 
 /* Hover promotes by exactly one elevation step. */
 .card-lift:hover {
-  transform: translateY(-2px);
+  transform: translateY(-3px) scale(1.006);
   box-shadow: var(--elev-2);
   border-color: var(--border-strong);
+}
+
+/* ------------------------------------------------------------------- depth
+ *
+ * Real 3D, not a skewed picture of it.
+ *
+ * `.scene` establishes the perspective; `.tilt-3d` is the thing that rotates
+ * inside it, and `preserve-3d` means its children keep their own Z. That is
+ * what separates this from the usual "3D card": the layers genuinely stand at
+ * different depths, so parallax between them falls out of the geometry instead
+ * of being animated by hand.
+ *
+ * `backface-visibility` and a Z-nudge on the text layer keep glyphs off the
+ * fractional-pixel boundaries that make transformed text look soft.
+ */
+.scene {
+  perspective: 1100px;
+  perspective-origin: 50% 50%;
+}
+
+.tilt-3d {
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+  transition: transform var(--dur-slow) var(--ease-spring);
+}
+
+/* Layers. Applied to children of a `.tilt-3d`; each floats towards the viewer. */
+.layer-1 {
+  transform: translateZ(14px);
+}
+.layer-2 {
+  transform: translateZ(28px);
+}
+.layer-3 {
+  transform: translateZ(var(--lift-z));
+}
+
+/*
+ * The sheen: a hard diagonal band of light that sweeps as the card turns.
+ *
+ * Driven by the same `--mx`/`--my` the spotlight uses, so one pointer handler
+ * feeds both and there is no second listener per card.
+ */
+.sheen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease-out);
+  background: linear-gradient(
+    105deg,
+    transparent 35%,
+    rgb(255 255 255 / 0.07) 48%,
+    rgb(255 255 255 / 0.11) 50%,
+    rgb(255 255 255 / 0.07) 52%,
+    transparent 65%
+  );
+  background-size: 260% 100%;
+  background-position: calc(100% - var(--mx, 50%) * 2) 0;
+}
+
+.sheen:hover::after {
+  opacity: 1;
 }
 
 /*
@@ -316,13 +403,16 @@ body::after {
 /* ---------------------------------------------------------------- controls */
 
 .btn {
+  position: relative;
+  overflow: hidden;
   border-radius: var(--r-md);
   border: 1px solid var(--border-strong);
   color: var(--ink-2);
   transition:
-    transform var(--dur-fast) var(--ease-out),
+    transform var(--dur-base) var(--ease-spring),
     border-color var(--dur-fast) var(--ease-out),
     color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out),
     background var(--dur-fast) var(--ease-out);
 }
 
@@ -330,11 +420,39 @@ body::after {
   border-color: var(--accent);
   color: var(--accent-ink);
   background: var(--accent-dim);
+  transform: translateY(-1px);
+  box-shadow: 0 0 0 1px rgb(224 163 61 / 0.12), 0 6px 18px -8px rgb(224 163 61 / 0.5);
+}
+
+/*
+ * A band of light crossing the button on hover.
+ *
+ * One pseudo-element and one transform. It runs on hover only, and only once
+ * per hover — a shine that loops turns a control into an advertisement.
+ */
+.btn::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transform: translateX(-120%) skewX(-18deg);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgb(255 255 255 / 0.13),
+    transparent
+  );
+}
+
+.btn:hover::after {
+  transition: transform var(--dur-lazy) var(--ease-out);
+  transform: translateX(120%) skewX(-18deg);
 }
 
 /* Compresses when pressed, so a click feels received. */
 .btn:active {
-  transform: scale(0.97);
+  transform: scale(0.96) translateY(0);
+  transition-duration: var(--dur-fast);
 }
 
 .btn:focus-visible,
@@ -386,13 +504,84 @@ summary:focus-visible {
  * a list arrives in sequence rather than all at once.
  */
 .rise {
-  animation: rise var(--dur-slow) var(--ease-out) both;
+  animation: rise var(--dur-lazy) var(--ease-out) both;
 }
 
 @keyframes rise {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(14px) scale(0.985);
+  }
+}
+
+/*
+ * The page transition.
+ *
+ * Deliberately smaller and faster than the card entrances. A whole page that
+ * swoops is a page you wait for; the job here is only to signal that the
+ * content changed, and 260ms of a few pixels does that without ever being the
+ * reason something feels slow.
+ */
+.page-in {
+  animation: page-in 260ms var(--ease-out) both;
+}
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/*
+ * Reveal on scroll, in CSS.
+ *
+ * `animation-timeline: view()` drives the animation from the element's own
+ * position in the scrollport rather than from a clock, so there is no
+ * IntersectionObserver, no state, and no JavaScript on the scroll path at all —
+ * it runs off the main thread.
+ *
+ * Wrapped in `@supports` because a browser without it would otherwise leave
+ * every card stuck at `opacity: 0`, which is a blank page rather than a missing
+ * flourish. Progressive enhancement is not optional when the fallback is
+ * "nothing is visible".
+ */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal {
+      animation: reveal linear both;
+      animation-timeline: view();
+      /*
+       * A fixed distance, not a percentage.
+       *
+       * `entry 0% entry 60%` measures against the ELEMENT's height, so a block
+       * taller than the viewport fades in over most of a screenful of
+       * scrolling and sits half-transparent while you are trying to read it.
+       * 240px of travel behaves the same for a one-line caption and for a
+       * chronology with forty entries.
+       */
+      animation-range: entry 0% entry 240px;
+    }
+  }
+}
+
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: translateY(26px) scale(0.97);
+  }
+}
+
+/*
+ * Bars growing from their baseline. A composited scaleX, never a width.
+ */
+.grow-bar {
+  animation: grow-bar var(--dur-lazy) var(--ease-out) both;
+}
+
+@keyframes grow-bar {
+  from {
+    transform: scaleX(0);
   }
 }
 
@@ -423,6 +612,37 @@ summary:focus-visible {
   }
 
   .card-lift:hover {
+    transform: none;
+  }
+
+  /*
+   * The 3D pieces, explicitly.
+   *
+   * The blanket rule above collapses DURATIONS, which is not the same as
+   * removing a transform: a tilt with a 0.01ms transition still tilts, it just
+   * snaps there instantly — which is a worse experience than the animation it
+   * was meant to spare. Anything that moves in depth has to be switched off by
+   * name.
+   */
+  .tilt-3d,
+  .tilt-3d:hover,
+  .layer-1,
+  .layer-2,
+  .layer-3 {
+    transform: none !important;
+  }
+
+  .scene {
+    perspective: none;
+  }
+
+  .sheen::after,
+  .btn::after {
+    display: none;
+  }
+
+  .btn:hover,
+  .btn:active {
     transform: none;
   }
 }

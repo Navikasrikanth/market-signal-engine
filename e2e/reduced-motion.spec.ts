@@ -50,4 +50,24 @@ test('the field is painted and static under reduced motion', async ({ page }) =>
     () => document.getAnimations().filter((a) => a.playState === 'running').length,
   )
   expect(running).toBe(0)
+
+  /*
+   * And the card does not tilt.
+   *
+   * This is the third mechanism, and the easiest one to lose: the tilt is an
+   * INLINE transform written from a pointer handler, so the global CSS rule
+   * cannot touch it. Collapsing a transition to 0.01ms does not remove a
+   * transform — it just makes the card snap into the tilt instantly, which is
+   * worse than the animation it was meant to spare.
+   */
+  const card = page.locator('article').first()
+  const box = await card.boundingBox()
+  if (box) {
+    await page.mouse.move(box.x + box.width * 0.9, box.y + box.height * 0.15)
+    await page.waitForTimeout(250)
+    const transform = await card.evaluate((el) => getComputedStyle(el).transform)
+    expect(transform === 'none' || transform === 'matrix(1, 0, 0, 1, 0, 0)').toBe(
+      true,
+    )
+  }
 })

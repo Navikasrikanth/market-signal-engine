@@ -132,8 +132,9 @@ function PositionRow({ item }: { item: SitrepItem }) {
 
   return (
     <li
-      className="rounded-[var(--r-md)] border border-[color:var(--border)] bg-[color:var(--surface-2)] p-3 transition-colors hover:border-[color:var(--border-strong)]"
+      className="rounded-[var(--r-md)] border border-[color:var(--border)] bg-[color:var(--surface-2)] p-3 transition-[transform,border-color,box-shadow] duration-300 hover:translate-x-1 hover:border-[color:var(--border-strong)] hover:shadow-[var(--elev-1)]"
       style={{
+        transitionTimingFunction: 'var(--ease-spring)',
         borderLeft: `2px solid ${
           tone === 'favourable'
             ? 'var(--up)'

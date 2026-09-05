@@ -301,7 +301,10 @@ function Section({
  */
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-[var(--r-md)] border border-[color:var(--border)] bg-[color:var(--surface-2)] px-3 py-2 transition-colors hover:border-[color:var(--border-strong)]">
+    <div
+      className="rounded-[var(--r-md)] border border-[color:var(--border)] bg-[color:var(--surface-2)] px-3 py-2 transition-[transform,border-color,box-shadow] duration-300 hover:-translate-y-0.5 hover:border-[color:var(--border-strong)] hover:shadow-[var(--elev-2)]"
+      style={{ transitionTimingFunction: 'var(--ease-spring)' }}
+    >
       <dt className="meta truncate" title={label}>
         {label}
       </dt>

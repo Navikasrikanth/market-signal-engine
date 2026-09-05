@@ -229,7 +229,7 @@ function LiftChart({
         because it is measured in the same box they are.
       */}
       <div className="flex flex-col gap-2">
-        {measurable.map((r) => {
+        {measurable.map((r, i) => {
           const bad = r.lift < 1
           return (
             <div key={r.detector} className="flex items-center gap-3">
@@ -237,12 +237,20 @@ function LiftChart({
                 {r.detector}
               </span>
               <span className="relative h-3 flex-1 rounded-full bg-[color:var(--surface-2)]">
+                {/*
+                  Grown from the left with a scale, not a width.
+                  
+                  Animating `width` would relayout the row on every frame; a
+                  scaleX is composited. The bar is drawn at full length and
+                  squashed to nothing, so the browser lays it out exactly once.
+                */}
                 <span
-                  className="absolute inset-y-0 left-0 rounded-full"
+                  className="grow-bar absolute inset-y-0 left-0 origin-left rounded-full"
                   style={{
                     width: `${(r.lift / max) * 100}%`,
                     background: bad ? 'var(--down)' : 'var(--accent)',
                     opacity: bad ? 0.85 : 0.75,
+                    animationDelay: `${i * 60}ms`,
                   }}
                 />
                 {/* 1.00x. Drawn over the bar so a detector that fails to reach

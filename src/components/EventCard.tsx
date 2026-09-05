@@ -101,13 +101,22 @@ export function EventCard({
       <span
         aria-hidden
         className="absolute inset-y-0 left-0 w-[2px] rounded-l-[var(--r-lg)]"
-        style={{ background: accent }}
+        style={{
+          background: accent,
+          // Slightly proud of the card face, so on a turn it reads as an edge
+          // with thickness rather than a stripe painted on flat card stock.
+          transform: 'translateZ(6px)',
+          boxShadow: `0 0 14px -2px ${accent}`,
+        }}
       />
       <div
         className="transition-opacity"
         style={{ opacity: dismissed ? 0.4 : 1 }}
       >
-      <header className="flex items-start justify-between gap-4">
+      {/* The front plane. Symbol, severity and score stand closest to the
+          viewer, so turning the card parallaxes them against the body text
+          behind — the depth is geometry, not a second animation. */}
+      <header className="layer-2 flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="font-mono text-base font-semibold tracking-wide">
@@ -164,14 +173,16 @@ export function EventCard({
           </p>
         </div>
 
-        <AttentionScore score={item.attentionScore} />
+        <span className="layer-3 block">
+          <AttentionScore score={item.attentionScore} />
+        </span>
       </header>
 
-      <p className="mt-3 text-[15px] leading-snug text-[color:var(--ink)]">
+      <p className="layer-1 mt-3 text-[15px] leading-snug text-[color:var(--ink)]">
         {item.headline}
       </p>
 
-      <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
+      <div className="layer-1 mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
         <span className="flex items-center gap-2">
           <span className="font-mono text-[10px] tracking-wider text-[color:var(--ink-3)]">
             SINCE YOU LOOKED

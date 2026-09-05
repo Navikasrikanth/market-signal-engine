@@ -70,7 +70,7 @@ export default async function MarketPage() {
                 return (
                   <tr
                     key={item.symbol}
-                    className="border-b border-[color:var(--border)] transition-colors last:border-0 hover:bg-[color:var(--surface-2)]"
+                    className="group border-b border-[color:var(--border)] transition-colors last:border-0 hover:bg-[color:var(--surface-2)]"
                     // The ones the brief showed are marked, so the boundary the
                     // budget draws is visible rather than implied.
                     style={inBrief ? undefined : { opacity: 0.62 }}
@@ -80,9 +80,10 @@ export default async function MarketPage() {
                           down the left edge is readable before any cell is. */}
                       <span
                         aria-hidden
-                        className="absolute inset-y-0 left-0 w-[2px]"
+                        className="absolute inset-y-0 left-0 w-[2px] origin-center transition-[transform,box-shadow] duration-300 group-hover:scale-x-[2.5]"
                         style={{
                           background: `var(--sev-${item.severity.toLowerCase()})`,
+                          transitionTimingFunction: 'var(--ease-spring)',
                         }}
                       />
                       {item.rank}
@@ -106,8 +107,12 @@ export default async function MarketPage() {
                     </td>
                     <td className="p-3">
                       {/* No draw-in here. Twenty lines animating at once is a
-                          page that flickers, not a page that arrives. */}
-                      <Sparkline points={item.sparkline} animate={false} />
+                          page that flickers, not a page that arrives — the
+                          growth is on hover, where it answers a question the
+                          reader just asked by pointing at the row. */}
+                      <span className="inline-block origin-left transition-transform duration-300 group-hover:scale-x-110 group-hover:scale-y-125">
+                        <Sparkline points={item.sparkline} animate={false} />
+                      </span>
                     </td>
                     <td className="p-3 text-xs leading-snug text-[color:var(--ink-2)]">
                       {item.headline}

@@ -67,7 +67,8 @@ function Tile({ row }: { row: Pulse['strip'][number] }) {
   return (
     <div
       title={row.name}
-      className="rounded-[var(--r-md)] border border-[color:var(--border)] bg-[color:var(--surface)] px-2 py-1.5 transition-colors hover:border-[color:var(--border-strong)]"
+      className="rounded-[var(--r-md)] border border-[color:var(--border)] bg-[color:var(--surface)] px-2 py-1.5 transition-[transform,border-color,box-shadow] duration-300 hover:-translate-y-0.5 hover:border-[color:var(--border-strong)] hover:shadow-[var(--elev-2)]"
+      style={{ transitionTimingFunction: 'var(--ease-spring)' }}
     >
       <div className="flex items-baseline justify-between gap-1">
         <span className="font-mono text-[10px] tracking-wide text-[color:var(--ink-2)]">
