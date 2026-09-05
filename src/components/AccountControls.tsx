@@ -58,10 +58,8 @@ export function AccountControls({ budget }: { budget: number }) {
   }
 
   return (
-    <section className="rounded-lg border border-[color:var(--border)] bg-[color:var(--surface)] p-4">
-      <h2 className="mb-3 font-mono text-[10px] tracking-wider text-[color:var(--ink-3)]">
-        YOUR BRIEF
-      </h2>
+    <section className="glass rounded-[var(--r-lg)] p-4">
+      <h2 className="meta mb-3">YOUR BRIEF</h2>
 
       <label className="flex flex-wrap items-center gap-3 text-sm">
         <span className="text-[color:var(--ink-2)]">Show at most</span>
@@ -73,7 +71,7 @@ export function AccountControls({ budget }: { budget: number }) {
           value={value}
           disabled={pending}
           onChange={(e) => void changeBudget(Number(e.target.value))}
-          className="rounded-md border border-[color:var(--border-strong)] bg-[color:var(--surface-2)] px-2 py-1 text-xs text-[color:var(--ink)]"
+          className="btn bg-[color:var(--surface-2)] px-2 py-1 text-xs text-[color:var(--ink)]"
         >
           {[3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
             <option key={n} value={n}>
@@ -91,9 +89,7 @@ export function AccountControls({ budget }: { budget: number }) {
       </p>
 
       <div className="mt-4 border-t border-[color:var(--border)] pt-3">
-        <p className="font-mono text-[10px] tracking-wider text-[color:var(--ink-3)]">
-          SEE A LONGER WINDOW
-        </p>
+        <p className="meta">SEE A LONGER WINDOW</p>
         <p className="mt-1 text-xs leading-relaxed text-[color:var(--ink-3)]">
           Set &ldquo;since you last looked&rdquo; further back. Useful when you
           were away longer than the product knows, or when you want the
@@ -111,7 +107,7 @@ export function AccountControls({ budget }: { budget: number }) {
               type="button"
               disabled={pending}
               onClick={() => void rewind(o.days)}
-              className="rounded-md border border-[color:var(--border-strong)] px-2.5 py-1 font-mono text-[11px] tracking-wide text-[color:var(--ink-2)] hover:border-[color:var(--accent)] hover:text-[color:var(--accent-ink)] disabled:opacity-50"
+              className="btn px-2.5 py-1 font-mono text-[11px] tracking-wide disabled:opacity-50"
             >
               {o.label}
             </button>
@@ -135,7 +131,7 @@ export function AccountControls({ budget }: { budget: number }) {
           onClick={() => void signOutEverywhere()}
           title="Revoke every session on every device"
           aria-label="Sign out everywhere"
-          className="rounded-md border border-[color:var(--border-strong)] px-2.5 py-1 font-mono text-[11px] tracking-wide text-[color:var(--ink-3)] hover:border-[color:var(--down)] hover:text-[color:var(--down)]"
+          className="btn px-2.5 py-1 font-mono text-[11px] tracking-wide hover:!border-[color:var(--down)] hover:!text-[color:var(--down)]"
         >
           Sign out everywhere
         </button>

@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import { currentUser } from '@/lib/auth'
 import { buildSitrep } from '@/lib/sitrep'
-import { TopNav } from '@/components/TopNav'
+import { Shell } from '@/components/Shell'
 import { SeverityChip, Change, Sparkline } from '@/components/primitives'
 import { Caveat } from '@/components/Caveat'
 
@@ -27,12 +27,10 @@ export default async function MarketPage() {
   const quiet = sitrep.watchlistSize - sitrep.all.length - sitrep.snoozedCount
 
   return (
-    <main className="mx-auto w-full max-w-4xl px-5 py-10">
-      <TopNav current="/market" asOf={sitrep.asOf} />
+    <Shell displayName={sitrep.displayName} asOf={sitrep.asOf}>
+    <main className="mx-auto w-full max-w-6xl px-5 py-10">
 
-      <h1 className="mt-6 text-2xl font-semibold tracking-tight">
-        Everything at once
-      </h1>
+      <h1 className="display rise">Everything at once</h1>
       <p className="mt-2 max-w-prose text-sm leading-relaxed text-[color:var(--ink-3)]">
         The same engine, with the attention budget switched off. Your brief
         shows {sitrep.attentionBudget}; this shows all {sitrep.all.length} names
@@ -50,10 +48,13 @@ export default async function MarketPage() {
           Nothing scored above noise across your watchlist.
         </p>
       ) : (
-        <section className="mt-6 overflow-x-auto rounded-lg border border-[color:var(--border)] bg-[color:var(--surface)]">
-          <table className="w-full min-w-[46rem] text-sm">
-            <thead>
-              <tr className="border-b border-[color:var(--border)] text-left font-mono text-[10px] tracking-wider text-[color:var(--ink-3)]">
+        /* The table is the page here, so it gets the width. A sticky header
+           keeps the columns named on a long watchlist - scrolling past the
+           header turns "68" into a number with no unit. */
+        <section className="card mt-6 overflow-x-auto overflow-y-visible p-0">
+          <table className="w-full min-w-[46rem] border-collapse text-sm">
+            <thead className="sticky top-0 z-10">
+              <tr className="glass-strong border-b border-[color:var(--border)] text-left font-mono text-[10px] tracking-wider text-[color:var(--ink-3)]">
                 <th className="p-3 font-normal">#</th>
                 <th className="p-3 font-normal">NAME</th>
                 <th className="p-3 text-right font-normal">ATTENTION</th>
@@ -69,12 +70,21 @@ export default async function MarketPage() {
                 return (
                   <tr
                     key={item.symbol}
-                    className="border-b border-[color:var(--border)] last:border-0"
+                    className="border-b border-[color:var(--border)] transition-colors last:border-0 hover:bg-[color:var(--surface-2)]"
                     // The ones the brief showed are marked, so the boundary the
                     // budget draws is visible rather than implied.
                     style={inBrief ? undefined : { opacity: 0.62 }}
                   >
-                    <td className="tabular p-3 font-mono text-xs text-[color:var(--ink-3)]">
+                    <td className="tabular relative p-3 pl-4 font-mono text-xs text-[color:var(--ink-3)]">
+                      {/* Severity as a leading rail, so the column of colour
+                          down the left edge is readable before any cell is. */}
+                      <span
+                        aria-hidden
+                        className="absolute inset-y-0 left-0 w-[2px]"
+                        style={{
+                          background: `var(--sev-${item.severity.toLowerCase()})`,
+                        }}
+                      />
                       {item.rank}
                     </td>
                     <td className="p-3">
@@ -95,7 +105,9 @@ export default async function MarketPage() {
                       <Change pct={item.windowReturnPct} />
                     </td>
                     <td className="p-3">
-                      <Sparkline points={item.sparkline} />
+                      {/* No draw-in here. Twenty lines animating at once is a
+                          page that flickers, not a page that arrives. */}
+                      <Sparkline points={item.sparkline} animate={false} />
                     </td>
                     <td className="p-3 text-xs leading-snug text-[color:var(--ink-2)]">
                       {item.headline}
@@ -114,5 +126,6 @@ export default async function MarketPage() {
         you have to trust blindly.
       </Caveat>
     </main>
+    </Shell>
   )
 }

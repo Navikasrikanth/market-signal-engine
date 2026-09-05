@@ -7,7 +7,9 @@ import { StoryBlock } from '@/components/StoryBlock'
 import { ThemeCard } from '@/components/ThemeCard'
 import { AttentionBudget } from '@/components/AttentionBudget'
 import { MarkAllSeen } from '@/components/MarkAllSeen'
-import { TopNav } from '@/components/TopNav'
+import { Shell } from '@/components/Shell'
+import { AttentionField, type FieldPoint } from '@/components/AttentionField'
+import { MarketPulse } from '@/components/MarketPulse'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,9 +26,27 @@ export default async function Page() {
 
   const sitrep = await buildSitrep(user.id)
 
+  /*
+   * The field, from data the brief already has.
+   *
+   * `all` is every watched name ranked without the budget applied, so the
+   * points below the line are not a decorative filler set - they are the
+   * specific names the product decided not to show, which is the thing being
+   * argued. `items` is what survived the cut, so membership in it is what
+   * "surfaced" means, rather than a threshold guessed at again here.
+   */
+  const surfaced = new Set(sitrep.items.map((i) => i.symbol))
+  const field: FieldPoint[] = sitrep.all.map((i) => ({
+    symbol: i.symbol,
+    score: i.attentionScore,
+    severity: i.severity,
+    surfaced: surfaced.has(i.symbol),
+  }))
+
   return (
+    <Shell displayName={sitrep.displayName} asOf={sitrep.asOf}>
     <main className="mx-auto w-full max-w-3xl px-5 py-10">
-      <Header sitrep={sitrep} />
+      <Header sitrep={sitrep} field={field} />
 
       <StalenessWarning
         sessionsBehind={sitrep.dataQuality.sessionsBehind}
@@ -43,12 +63,17 @@ export default async function Page() {
       ) : (
         <>
           <section className="mt-6 flex flex-col gap-3">
-            {sitrep.items.map((item) => (
-              <EventCard
+            {sitrep.items.map((item, i) => (
+              /* Staggered by rank, so the brief arrives in the order it is
+                 ranked in. Capped at five steps: past that the last card is
+                 waiting on an animation rather than on data. */
+              <div
                 key={item.symbol}
-                item={item}
-                trackRecord={sitrep.trackRecord}
-              />
+                className="rise"
+                style={{ animationDelay: `${Math.min(i, 5) * 45}ms` }}
+              >
+                <EventCard item={item} trackRecord={sitrep.trackRecord} />
+              </div>
             ))}
           </section>
 
@@ -85,13 +110,16 @@ export default async function Page() {
 
       {sitrep.watchlistSize > 0 && <Footer sitrep={sitrep} />}
     </main>
+    </Shell>
   )
 }
 
 function Header({
   sitrep,
+  field,
 }: {
   sitrep: Awaited<ReturnType<typeof buildSitrep>>
+  field: FieldPoint[]
 }) {
   const hours = sitrep.absenceHours
   const away =
@@ -103,9 +131,7 @@ function Header({
 
   return (
     <header>
-      <TopNav current="/" asOf={sitrep.asOf} />
-
-      <h1 className="mt-6 text-2xl font-semibold tracking-tight">
+      <h1 className="display rise">
         Good morning, {sitrep.displayName}.
       </h1>
 
@@ -143,7 +169,28 @@ function Header({
             </p>
           )}
 
-          <div className="mt-2 flex items-center justify-between gap-4">
+          <div className="mt-4">
+            <MarketPulse market={sitrep.market} since={sitrep.since} />
+          </div>
+
+          {/*
+            The whole argument, as one picture: every name you watch is a
+            point, and the line is the budget. Most of the field sits below
+            it, which is the product working rather than the product being
+            quiet - and no sentence makes that as immediate as seeing it.
+          */}
+          {field.length > 0 && (
+            <figure className="mt-4">
+              <AttentionField points={field} budget={sitrep.attentionBudget} />
+              <figcaption className="mt-1 text-xs text-[color:var(--ink-3)]">
+                Each point is a name you watch, placed by attention score.
+                Points above the line reached your brief; the rest were found
+                and held back.
+              </figcaption>
+            </figure>
+          )}
+
+          <div className="mt-5 flex items-center justify-between gap-4">
             <p className="text-lg text-[color:var(--ink-2)]">
               {sitrep.items.length === 0
                 ? 'Nothing needs your attention.'
@@ -220,7 +267,7 @@ function Chronology({
   if (entries.length === 0 && cameAndWent.length === 0) return null
 
   return (
-    <section className="rounded-lg border border-[color:var(--border)] bg-[color:var(--surface)] p-4">
+    <section className="card p-4">
       <h2 className="mb-3 font-mono text-[10px] tracking-wider text-[color:var(--ink-3)]">
         WHILE YOU WERE AWAY
       </h2>
@@ -308,10 +355,13 @@ function CollapseLine({
  */
 function EmptyWatchlist() {
   return (
-    <section className="mt-6 rounded-lg border border-[color:var(--border)] bg-[color:var(--surface)] p-8 text-center">
-      <p className="font-mono text-[11px] tracking-wider text-[color:var(--ink-3)]">
-        NOTHING WATCHED YET
-      </p>
+    <section className="glass rise mt-6 rounded-[var(--r-xl)] p-10 text-center">
+      {/* The field, empty. It is the same picture the brief will show once
+          there is something to plot, so the first screen already introduces
+          the idea the product is built on rather than apologising for having
+          no data. */}
+      <EmptyField />
+      <p className="meta mt-6">NOTHING WATCHED YET</p>
       <p className="mt-3 text-lg text-[color:var(--ink-2)]">
         Pick a few names and SITREP starts keeping watch.
       </p>
@@ -321,7 +371,7 @@ function EmptyWatchlist() {
       </p>
       <Link
         href="/watchlist"
-        className="mt-5 inline-block rounded-md border border-[color:var(--border-strong)] px-3 py-1.5 font-mono text-[11px] tracking-wide text-[color:var(--ink-2)] hover:border-[color:var(--accent)] hover:text-[color:var(--accent-ink)]"
+        className="mt-5 inline-block btn px-3 py-1.5 font-mono text-[11px] tracking-wide"
       >
         Build your watchlist →
       </Link>
@@ -341,8 +391,8 @@ function QuietState({
   const calm = watchlistSize - snoozedCount
 
   return (
-    <section className="mt-6 rounded-lg border border-[color:var(--border)] bg-[color:var(--surface)] p-8 text-center">
-      <p className="font-mono text-[11px] tracking-wider text-[color:var(--ink-3)]">
+    <section className="glass rise mt-6 rounded-[var(--r-xl)] p-10 text-center">
+      <p className="meta">
         {snoozedCount > 0 ? 'NOTHING NEW' : 'YOUR MARKET IS QUIET'}
       </p>
       <p className="mt-3 text-lg text-[color:var(--ink-2)]">
@@ -381,5 +431,59 @@ function Footer({
         across two independent sources
       </p>
     </footer>
+  )
+}
+
+/**
+ * The attention field with nothing in it.
+ *
+ * A still SVG rather than the canvas, because there is genuinely nothing to
+ * plot and drifting fake points would be exactly the invented data this
+ * product refuses everywhere else. What it shows is the idea: a line, and the
+ * space above and below it that names will eventually fall into.
+ */
+function EmptyField() {
+  return (
+    <svg
+      viewBox="0 0 320 96"
+      className="mx-auto w-full max-w-[320px]"
+      role="img"
+      aria-label="An empty attention field: the budget line, with no names on it yet"
+    >
+      <line
+        x1="16"
+        y1="38"
+        x2="304"
+        y2="38"
+        stroke="var(--accent)"
+        strokeOpacity="0.3"
+        strokeWidth="1"
+        strokeDasharray="3 5"
+      />
+      <text
+        x="16"
+        y="30"
+        fill="var(--accent)"
+        fillOpacity="0.6"
+        fontSize="9"
+        fontFamily="ui-monospace, monospace"
+        letterSpacing="1"
+      >
+        ATTENTION BUDGET
+      </text>
+      {/* A few hollow markers below the line - the shape a watched but quiet
+          market takes, drawn as outlines so nothing reads as a real value. */}
+      {[52, 96, 140, 184, 228, 272].map((x, i) => (
+        <circle
+          key={x}
+          cx={x}
+          cy={62 + (i % 3) * 9}
+          r="3"
+          fill="none"
+          stroke="var(--border-strong)"
+          strokeWidth="1"
+        />
+      ))}
+    </svg>
   )
 }

@@ -40,8 +40,8 @@ export function ReplayPlayer({
     // often. Saying which windows exist is more useful than reporting an
     // absence, and far better than rendering an empty player that looks broken.
     return (
-      <section className="mt-8 rounded-lg border border-[color:var(--border)] bg-[color:var(--surface)] p-6">
-        <p className="font-mono text-[10px] tracking-wider text-[color:var(--ink-3)]">
+      <section className="glass mt-8 rounded-[var(--r-lg)] p-6">
+        <p className="meta">
           NO DATA FOR THIS WINDOW
         </p>
         <p className="mt-3 text-sm leading-relaxed text-[color:var(--ink-2)]">
@@ -70,7 +70,7 @@ export function ReplayPlayer({
           type="button"
           onClick={() => setIndex((i) => Math.max(0, i - 1))}
           disabled={index === 0}
-          className="rounded-md border border-[color:var(--border-strong)] px-3 py-1.5 font-mono text-xs text-[color:var(--ink-2)] hover:border-[color:var(--accent)] disabled:opacity-40"
+          className="btn px-3 py-1.5 font-mono text-xs disabled:opacity-40"
         >
           &larr; prev
         </button>
@@ -78,7 +78,7 @@ export function ReplayPlayer({
           type="button"
           onClick={() => setIndex((i) => Math.min(steps.length - 1, i + 1))}
           disabled={index >= steps.length - 1}
-          className="rounded-md border border-[color:var(--border-strong)] px-3 py-1.5 font-mono text-xs text-[color:var(--ink-2)] hover:border-[color:var(--accent)] disabled:opacity-40"
+          className="btn px-3 py-1.5 font-mono text-xs disabled:opacity-40"
         >
           next &rarr;
         </button>
@@ -86,7 +86,7 @@ export function ReplayPlayer({
           <button
             type="button"
             onClick={() => setIndex(nextInteresting)}
-            className="rounded-md border px-3 py-1.5 font-mono text-xs"
+            className="btn px-3 py-1.5 font-mono text-xs"
             style={{ borderColor: 'var(--accent)', color: 'var(--accent-ink)' }}
           >
             skip to next event &raquo;
@@ -97,6 +97,30 @@ export function ReplayPlayer({
         </span>
       </div>
 
+      {/*
+        The scrubber, with the days that produced something marked above it.
+        Without the ticks the slider is a distance with no landmarks, and the
+        most common complaint about the replay was exactly that: dragging
+        through a fortnight of quiet days looking for the one that mattered.
+        The ticks make the quiet stretches legible as quiet rather than as
+        nothing having been computed.
+      */}
+      <div className="relative mt-4 h-3">
+        {interesting.map((i) => (
+          <span
+            key={i}
+            aria-hidden
+            title={steps[i].date}
+            className="absolute top-0 h-2 w-px"
+            style={{
+              left: `${steps.length > 1 ? (i / (steps.length - 1)) * 100 : 50}%`,
+              background:
+                i === index ? 'var(--accent-ink)' : 'var(--border-strong)',
+            }}
+          />
+        ))}
+      </div>
+
       <input
         type="range"
         min={0}
@@ -104,10 +128,10 @@ export function ReplayPlayer({
         value={index}
         onChange={(e) => setIndex(Number(e.target.value))}
         aria-label="Replay position"
-        className="mt-3 w-full accent-[color:var(--accent)]"
+        className="w-full accent-[color:var(--accent)]"
       />
 
-      <div className="mt-5 flex items-baseline justify-between gap-4">
+      <div key={step.date} className="rise mt-5 flex items-baseline justify-between gap-4">
         <h2 className="tabular font-mono text-lg tracking-wide">{step.date}</h2>
         <span className="tabular font-mono text-xs text-[color:var(--ink-3)]">
           market{' '}
@@ -122,7 +146,7 @@ export function ReplayPlayer({
         </span>
       </div>
 
-      <section className="mt-4 rounded-lg border border-[color:var(--border)] bg-[color:var(--surface)] p-4">
+      <section key={`story-${step.date}`} className="card rise mt-4 p-4">
         <h3 className="mb-2 font-mono text-[10px] tracking-wider text-[color:var(--accent-ink)]">
           THE STORY
         </h3>
@@ -187,7 +211,7 @@ export function ReplayPlayer({
       ))}
 
       {step.items.length === 0 ? (
-        <p className="mt-4 rounded-lg border border-[color:var(--border)] bg-[color:var(--surface)] p-6 text-center text-sm text-[color:var(--ink-3)]">
+        <p className="mt-4 card p-6 text-center text-sm text-[color:var(--ink-3)]">
           No meaningful changes on this date.
         </p>
       ) : (
@@ -195,7 +219,7 @@ export function ReplayPlayer({
           {step.items.map((item) => (
             <article
               key={item.symbol}
-              className="rounded-lg border border-[color:var(--border)] bg-[color:var(--surface)] p-4"
+              className="card p-4"
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">

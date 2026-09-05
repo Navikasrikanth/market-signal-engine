@@ -13,7 +13,7 @@ import type { Narrative } from '@/engine/narrative'
  */
 export function StoryBlock({ narrative }: { narrative: Narrative }) {
   return (
-    <section className="rounded-lg border border-[color:var(--border)] bg-[color:var(--surface)] p-5">
+    <section className="card p-5">
       <h2 className="mb-2 font-mono text-[10px] tracking-wider text-[color:var(--accent-ink)]">
         THE STORY
       </h2>

@@ -68,7 +68,7 @@ export function WatchlistManager({
         </h2>
 
         {items.length === 0 ? (
-          <p className="rounded-lg border border-[color:var(--border)] bg-[color:var(--surface)] p-6 text-sm text-[color:var(--ink-3)]">
+          <p className="card p-6 text-sm text-[color:var(--ink-3)]">
             Nothing watched yet. Add a name below and your first brief will
             appear after the next close.
           </p>
@@ -77,7 +77,7 @@ export function WatchlistManager({
             {items.map((item) => (
               <li
                 key={item.symbol}
-                className="flex flex-wrap items-center gap-3 rounded-lg border border-[color:var(--border)] bg-[color:var(--surface)] px-4 py-3"
+                className="flex flex-wrap items-center gap-3 card px-4 py-3"
               >
                 <div className="min-w-0 flex-1">
                   <span className="font-mono text-sm font-semibold">

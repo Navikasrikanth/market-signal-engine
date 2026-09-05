@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { currentUser } from '@/lib/auth'
 import { buildSitrep, type SitrepItem } from '@/lib/sitrep'
-import { TopNav } from '@/components/TopNav'
+import { Shell } from '@/components/Shell'
 import { Change, Sparkline } from '@/components/primitives'
 import { INTENT_LABEL } from '@/engine/position'
 import { Caveat } from '@/components/Caveat'
@@ -48,12 +48,10 @@ export default async function PositionsPage() {
   const stated = sitrep.all.filter((i) => i.intent !== 'NONE').length
 
   return (
-    <main className="mx-auto w-full max-w-3xl px-5 py-10">
-      <TopNav current="/positions" asOf={sitrep.asOf} />
+    <Shell displayName={sitrep.displayName} asOf={sitrep.asOf}>
+    <main className="mx-auto w-full max-w-4xl px-5 py-10">
 
-      <h1 className="mt-6 text-2xl font-semibold tracking-tight">
-        What it means for you
-      </h1>
+      <h1 className="display rise">What it means for you</h1>
       <p className="mt-2 max-w-prose text-sm leading-relaxed text-[color:var(--ink-3)]">
         The brief ranks by how unusual a move is. This one groups by what you
         said you were doing with each name, because the same 8% fall is a loss
@@ -62,7 +60,7 @@ export default async function PositionsPage() {
       </p>
 
       {stated === 0 ? (
-        <section className="mt-8 rounded-lg border border-[color:var(--border)] bg-[color:var(--surface)] p-6">
+        <section className="glass mt-8 rounded-[var(--r-lg)] p-6">
           <p className="font-mono text-[10px] tracking-wider text-[color:var(--ink-3)]">
             NOTHING TO REFRAME YET
           </p>
@@ -76,15 +74,30 @@ export default async function PositionsPage() {
           </p>
           <Link
             href="/watchlist"
-            className="mt-4 inline-block rounded-md border border-[color:var(--border-strong)] px-3 py-1.5 font-mono text-[11px] tracking-wide text-[color:var(--ink-2)] hover:border-[color:var(--accent)] hover:text-[color:var(--accent-ink)]"
+            className="btn mt-4 inline-block px-3 py-1.5 font-mono text-[11px] tracking-wide"
           >
             Set your intents →
           </Link>
         </section>
       ) : (
-        <div className="mt-8 flex flex-col gap-6">
-          {groups.map((g) => (
-            <section key={g.intent}>
+        /* Columns rather than a stack. The whole point of this page is that
+           the same move means different things in different groups, and a
+           reader can only make that comparison when the groups are beside each
+           other instead of one below the next. */
+        /* Two columns only when there are two things to compare. With a
+           single stated intent the grid left half the page empty, which reads
+           as a missing column rather than as a deliberate layout. */
+        <div
+          className={`mt-8 grid gap-5 ${
+            groups.length > 1 ? 'md:grid-cols-2' : ''
+          }`}
+        >
+          {groups.map((g, gi) => (
+            <section
+              key={g.intent}
+              className="card rise p-4"
+              style={{ animationDelay: `${gi * 60}ms` }}
+            >
               <h2 className="font-mono text-[11px] tracking-wider text-[color:var(--accent-ink)]">
                 {INTENT_LABEL[g.intent].toUpperCase()} · {g.items.length}
               </h2>
@@ -110,6 +123,7 @@ export default async function PositionsPage() {
         </Caveat>
       </div>
     </main>
+    </Shell>
   )
 }
 
@@ -118,7 +132,7 @@ function PositionRow({ item }: { item: SitrepItem }) {
 
   return (
     <li
-      className="rounded-lg border border-[color:var(--border)] bg-[color:var(--surface)] p-3"
+      className="rounded-[var(--r-md)] border border-[color:var(--border)] bg-[color:var(--surface-2)] p-3 transition-colors hover:border-[color:var(--border-strong)]"
       style={{
         borderLeft: `2px solid ${
           tone === 'favourable'
@@ -136,13 +150,13 @@ function PositionRow({ item }: { item: SitrepItem }) {
         </span>
         <span className="flex items-center gap-3">
           <Change pct={item.windowReturnPct} />
-          <Sparkline points={item.sparkline} />
+          <Sparkline points={item.sparkline} animate={false} />
         </span>
       </div>
 
       {item.framing ? (
         <p
-          className="mt-2 text-sm leading-snug"
+          className="mt-2 text-[15px] leading-snug"
           style={{
             color:
               tone === 'favourable'

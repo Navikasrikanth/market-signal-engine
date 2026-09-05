@@ -10,6 +10,89 @@ look for.
 
 ---
 
+## Session 15 — the UI overhaul
+
+Branch `ui-overhaul`. Scope was explicit: look and feel only — no backend, no
+API, no engine, no schema, no auth. One read-path change was permitted and
+taken. `npm run verify` staying at **83** is the evidence the boundary held.
+
+### Built
+
+- **A design system, used.** `globals.css` now carries elevation, radii,
+  motion, glass and severity-tint tokens, plus a mesh-and-grain ground. The
+  point is the second half: every ad-hoc panel and outlined control in the app
+  was swept onto `.card` / `.glass` / `.btn`. A token layer nothing uses is a
+  token layer that drifts.
+- **`AttentionField`** — the product's argument as one picture. Every watched
+  name is a point placed by attention score, with the budget line drawn across
+  it; most of the field sits below the line, and that is the thesis. Bound to
+  `sitrep.all`, so nothing on it is invented. 2D canvas, 30fps cap, paused
+  off-screen, static under reduced motion.
+- **`MarketPulse`** — SPY, QQQ and the seven sector proxies over the *same*
+  window as the cards, from the same cached `windowStats`. A reader told NVDA
+  fell 6% could not previously tell whether that was NVDA or was everything.
+- **`Shell`** — a collapsible rail replacing the top bar, with the three views
+  separated from the tools, collapse state persisted, and the same links
+  rendered as a top bar below `lg`.
+- **Route-level skeletons** shaped like the cards they replace, a lift chart on
+  the track record, a tick-marked scrubber on replay, stat tiles on the
+  pipeline page, and grouped columns on positions.
+
+### Fixed
+
+- **Unlayered CSS silently defeated Tailwind's positioning.** A rule lifting
+  `main`/`aside`/`header`/`nav` above the ground set `position: relative`, and
+  because everything in `globals.css` is unlayered it beat the `fixed` utility
+  on the mobile navigation bar regardless of specificity. The bar dropped into
+  normal flow and squeezed `<main>` to **40px**: below `lg` the app rendered as
+  an empty screen. The ground sits at `z-index: -1` now and touches no
+  element's position.
+- **The attention field could render as blank space.** The canvas painted only
+  from inside the animation loop, and the loop was gated on a `running` flag
+  the `IntersectionObserver` could clear without ever being able to restore —
+  one "not intersecting" report while the page was still settling left it off
+  permanently. The picture is now drawn once, unconditionally, before any loop
+  exists; the drift is decoration on top of it. **Decoration must never decide
+  whether the data appears.**
+- **The loading skeleton claimed the `main` landmark.** As a route-level
+  Suspense fallback it is in the document at the same time as the page
+  streaming in behind it — two `main` landmarks at once, invalid for assistive
+  tech, and it broke two browser journeys that address the page by landmark.
+  Found by the tests, fixed in the component rather than in the tests.
+- **The lift chart rendered every bar one row below its label.** The baseline
+  was a grid item spanning all rows, and the cell it occupied displaced the
+  first bar. Rewritten so the marker lives inside each bar's own track, where
+  it cannot desynchronise from what it measures.
+- **The field scaled from zero**, squashing every point into the top third and
+  hiding the gaps between names — which is the whole comparison. Now anchored
+  to the range actually present.
+- **The pulse strip overflowed** into a horizontal scrollbar across the hero
+  with the last tile cut in half. A strip you have to drag is one nobody reads.
+- **Positions left half the page empty** when only one intent was stated.
+
+### Exposed
+
+- **Two sparklines shared one gradient.** SVG ids are document-global, so a
+  hardcoded id meant the second line silently took the first one's colours — a
+  falling line drawn green. `useId` would fix it and would also make the module
+  client-only, which it is not: server pages render sparklines directly. There
+  are only ever two gradients, so they are named by direction.
+- **An inline transform beats a stylesheet one.** The cursor tilt would have
+  silently cancelled `.card-lift`'s elevation the moment the pointer moved, so
+  the lift is composed into the same transform.
+- **Reduced motion was honoured in three different places** — a global CSS
+  rule, and two separate `matchMedia` checks. Guarantees spread across three
+  mechanisms rot quietly, and the people they fail are the least likely to
+  report it. Now covered by a test asserting the field is both *painted* and
+  *byte-identical over time*: 12 browser journeys became **13**, deliberately.
+
+### Verification
+
+`tsc` clean · **227** unit tests · **13** browser journeys · **83**
+infrastructure checks (30 + 12 + 27 + 14, unchanged) · clean production build.
+
+---
+
 ## Session 14 — a position that vanished when the price was quiet
 
 ### Fixed

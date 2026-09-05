@@ -40,7 +40,7 @@ export function AttentionBudget({
   const total = Math.max(1, watchlistSize)
 
   return (
-    <section className="rounded-lg border border-[color:var(--border)] bg-[color:var(--surface)] p-4">
+    <section className="card p-4">
       <h2 className="mb-3 font-mono text-[10px] tracking-wider text-[color:var(--ink-3)]">
         YOUR ATTENTION TODAY
       </h2>
