@@ -42,6 +42,12 @@ export function AccountControls({ budget }: { budget: number }) {
     }
   }
 
+  async function rewind(days: number) {
+    if (await post('/api/watch-state/rewind', { days })) {
+      startTransition(() => router.push('/'))
+    }
+  }
+
   async function signOutEverywhere() {
     if (await post('/api/auth/logout-all')) {
       // Refresh before navigating: `push` alone can serve an RSC payload
@@ -79,6 +85,39 @@ export function AccountControls({ budget }: { budget: number }) {
         hidden. Raising it does not find more; it only shows more of what was
         already found.
       </p>
+
+      <div className="mt-4 border-t border-[color:var(--border)] pt-3">
+        <p className="font-mono text-[10px] tracking-wider text-[color:var(--ink-3)]">
+          SEE A LONGER WINDOW
+        </p>
+        <p className="mt-1 text-xs leading-relaxed text-[color:var(--ink-3)]">
+          Set &ldquo;since you last looked&rdquo; further back. Useful when you
+          were away longer than the product knows, or when you want the
+          quarter rather than the week.
+        </p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {[
+            { days: 7, label: 'a week' },
+            { days: 30, label: 'a month' },
+            { days: 75, label: '75 days' },
+            { days: 180, label: 'six months' },
+          ].map((o) => (
+            <button
+              key={o.days}
+              type="button"
+              disabled={pending}
+              onClick={() => void rewind(o.days)}
+              className="rounded-md border border-[color:var(--border-strong)] px-2.5 py-1 font-mono text-[11px] tracking-wide text-[color:var(--ink-2)] hover:border-[color:var(--accent)] hover:text-[color:var(--accent-ink)] disabled:opacity-50"
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+        <p className="mt-2 text-xs text-[color:var(--ink-3)]">
+          Moves the cursor backwards only. Pushing it forward would mark things
+          seen that were never shown.
+        </p>
+      </div>
 
       {/*
         Ordinary sign-out lives in the header, on every page. Only the heavier

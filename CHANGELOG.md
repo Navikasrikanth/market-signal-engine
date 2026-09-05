@@ -10,6 +10,22 @@ look for.
 
 ---
 
+## Session 13 — a cursor you can rewind
+
+### Built
+
+- **"See a longer window"** on the watchlist page: set *since you last looked*
+  back a week, a month, 75 days or six months. Backwards only — pushing a
+  cursor forward would mark things seen that were never shown, which is the one
+  thing it must never do.
+
+  This is a real control, not a demo hack. It answers "I was away longer than
+  you think" and "show me the quarter, not the week" — and it happens to make
+  the product demonstrable on any dataset, live or committed, without running a
+  seed script.
+
+---
+
 ## Session 12 — live by default, and three bugs only a live run could find
 
 A product whose premise is "what changed since you last looked" cannot
